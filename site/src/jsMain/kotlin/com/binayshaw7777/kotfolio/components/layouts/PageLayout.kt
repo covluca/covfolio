@@ -145,6 +145,8 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
                 .pointerEvents(PointerEvents.Auto)
                 .width(40.percent)
                 .rotateX(centerPos.atan2(cursorPos).rad)
+                .rotateY(centerPos.atan2(cursorPos).rad)
+                .rotateZ(centerPos.atan2(cursorPos).rad)
                 .minWidth(50.vw)
                 .styleModifier { property("height", "auto") },
             ref = ref { element ->
