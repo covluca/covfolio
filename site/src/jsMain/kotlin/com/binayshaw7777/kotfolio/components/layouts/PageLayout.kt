@@ -2,6 +2,10 @@ package com.binayshaw7777.kotfolio.components.layouts
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.varabyte.kobweb.compose.dom.svg.*
 import com.varabyte.kobweb.compose.foundation.layout.Box
 import com.varabyte.kobweb.compose.foundation.layout.Column
@@ -24,13 +28,20 @@ import com.binayshaw7777.kotfolio.components.widgets.AppearanceAwareImage
 import com.binayshaw7777.kotfolio.components.widgets.BackToTopButton
 import com.binayshaw7777.kotfolio.utils.Res
 import com.binayshaw7777.kotfolio.toSitePalette
+import com.binayshaw7777.kotfolio.utils.meth.Point
+import com.binayshaw7777.kotfolio.utils.meth.Pose2d
 import com.varabyte.kobweb.compose.css.PointerEvents
+import com.varabyte.kobweb.compose.dom.ElementRefScope
+import com.varabyte.kobweb.compose.dom.ref
 import com.varabyte.kobweb.compose.ui.styleModifier
 import com.varabyte.kobweb.silk.theme.breakpoint.rememberBreakpoint
 import org.jetbrains.compose.web.ExperimentalComposeWebApi
+import org.jetbrains.compose.web.css.CSSAngleValue
 import org.jetbrains.compose.web.css.Position
 import org.jetbrains.compose.web.css.px
+import org.jetbrains.compose.web.css.rad
 import org.jetbrains.compose.web.css.vw
+import org.w3c.dom.HTMLImageElement
 
 val PageContentStyle by ComponentStyle {
     base { Modifier.fillMaxSize().padding(leftRight = 2.cssRem, top = 4.cssRem) }
@@ -73,10 +84,14 @@ private fun SvgCobweb(modifier: Modifier) {
 
 @OptIn(ExperimentalComposeWebApi::class)
 @Composable
-fun SVGBackroundCircle(modifier: Modifier) {
+fun SVGBackroundCircle(
+    modifier: Modifier,
+    ref: ElementRefScope<HTMLImageElement>? = null
+) {
     AppearanceAwareImage(
         src = Res.Images.BACKGROUND_CIRCLES,
-        modifier = modifier
+        modifier = modifier,
+        ref = ref
     )
 }
 
@@ -85,6 +100,10 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
 
     val breakpoint = rememberBreakpoint()
 
+    var circleElement by remember { mutableStateOf<HTMLImageElement?>(null) }
+    var cursorPos by remember { mutableStateOf(Point(0.0, 0.0)) }
+    var centerPos by remember { mutableStateOf(Point(0.0, 0.0)) }
+
     val cursor = if (ColorMode.current.isDark) {
         Res.Images.CUSTOM_CURSOR_DARK
     } else {
@@ -92,13 +111,22 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
     }
 
     LaunchedEffect(title) {
-        document.title = "Binay Shaw - $title"
+        document.title = "Barbu Luca - $title"
     }
 
     Box(
         Modifier
             .fillMaxWidth()
             .minHeight(100.percent)
+            .onMouseMove {
+                cursorPos = Point(it.x, it.y)
+                circleElement?.getBoundingClientRect()?.let { rect ->
+                    centerPos = Point(
+                        x = rect.left + rect.width / 2.0,
+                        y = rect.top + rect.height / 2.0
+                    )
+                }
+            }
             .styleModifier {
                 property("cursor", "url('$cursor'), auto")
             }
@@ -111,7 +139,23 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
             .gridTemplateRows { size(1.fr); size(minContent) },
         contentAlignment = Alignment.Center
     ) {
-        SVGBackroundCircle(Modifier.align(Alignment.TopEnd).pointerEvents(PointerEvents.None).width(40.percent).minWidth(50.vw).styleModifier { property("height", "auto") })
+        SVGBackroundCircle(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .pointerEvents(PointerEvents.Auto)
+                .width(40.percent)
+                .rotateX(centerPos.atan2(cursorPos).rad)
+                .minWidth(50.vw)
+                .styleModifier { property("height", "auto") },
+            ref = ref { element ->
+                circleElement = element
+                val rect = element.getBoundingClientRect()
+                centerPos = Point(
+                    x = rect.left + rect.width / 2.0,
+                    y = rect.top + rect.height / 2.0
+                )
+            }
+        )
 
         Column(
             // Isolate the content, because otherwise the absolute-positioned SVG above will render on top of it.

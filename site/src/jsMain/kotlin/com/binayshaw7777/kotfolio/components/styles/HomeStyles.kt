@@ -105,3 +105,16 @@ val HeroContainerKeyFrames by Keyframes {
             .opacity(1)
     }
 }
+
+val TestAnimationKeyFrames by Keyframes {
+    0.percent {
+        Modifier
+            .margin(top = 50.px)
+            .opacity(0)
+    }
+    100.percent {
+        Modifier
+            .margin(top = 0.px)
+            .opacity(1)
+    }
+}
