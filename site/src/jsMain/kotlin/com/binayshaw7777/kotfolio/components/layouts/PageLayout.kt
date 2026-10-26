@@ -305,6 +305,7 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
             }
 
             beamElement?.style?.apply {
+                setProperty("pointer-events", "none")
                 left = "${beamX}px"
                 top = "${beamY}px"
                 transform = "translate(-50%, -50%) rotate(${beamAngleRad}rad)"
@@ -314,6 +315,7 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
                 backgroundColor = "rgb($red, $green, $blue)"
                 boxShadow = "0 0 12px 3px rgb($red, $green, $blue), 0 0 24px 6px rgba($red, $green, $blue, 0.6)"
             }
+            circleElement?.style?.setProperty("pointer-events", "none")
 
             window.requestAnimationFrame(::step)
         }
@@ -364,8 +366,10 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
                 .backgroundColor(Res.Colors.FOUR_D_PURPLE)
                 .position(Position.Absolute)
                 .pointerEvents(PointerEvents.None)
+                .styleModifier { property("user-select", "none") }
                 .toAttrs {
                     ref { element ->
+                        element.style.setProperty("pointer-events", "none")
                         beamElement = element
                         onDispose { beamElement = null }
                     }
@@ -375,15 +379,19 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
         SVGAnima(
             modifier = Modifier
                 //.align(Alignment.TopEnd)
-                .pointerEvents(PointerEvents.Auto)
+                .pointerEvents(PointerEvents.None)
                 .width(10.mm)
                 .minWidth(10.vw)
                 .position(Position.Absolute)
                 .left((circlePos.y).mm)
                 .top((-circlePos.x).mm)
                 //.translate((-circlePos.x).mm,(circlePos.y).mm)
-                .styleModifier { property("height", "auto") },
+                .styleModifier {
+                    property("height", "auto")
+                    property("user-select", "none")
+                },
             ref = ref { element ->
+                element.style.setProperty("pointer-events", "none")
                 circleElement = element
                 val rect = element.getBoundingClientRect()
                 /*centerPos = Point(
@@ -418,12 +426,13 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
 
         NavHeader(modifier = Modifier.position(Position.Fixed).top(0.px))
 
-
+        /*
+        //telemetry
         Column(modifier = Modifier.position(Position.Fixed).top(64.px)) {
             SpanText(cursorPos.toString())
             SpanText(centerPos.toString())
             SpanText(circlePos.toString())
-        }
+        }*/
         // Associate the footer with the row that will get pushed off the bottom of the page if it can't fit.
         Footer(breakpoint, Modifier.fillMaxWidth().gridRow(2))
     }

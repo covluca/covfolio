@@ -54,6 +54,12 @@ kotlin {
             }
         }
 
+        val jsTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
+
         // Uncomment the following if you pass `includeServer = true` into the `configAsKobwebApplication` call.
 //        val jvmMain by getting {
 //            dependencies {
