@@ -1,0 +1,7 @@
+{
+  "name": "covfolio",
+  "compatibility_date": "2026-10-26",
+  "assets": {
+    "directory": "./site/.kobweb/site"
+  }
+}

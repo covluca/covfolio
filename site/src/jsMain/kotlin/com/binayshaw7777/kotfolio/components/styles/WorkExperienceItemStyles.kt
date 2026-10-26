@@ -47,7 +47,7 @@ val ExperienceStyle by ComponentStyle {
         Modifier
             .width(100.percent)
             .fontSize(3.cssRem)
-            .minHeight(100.vh)
+            .minHeight(64.vh)
     }
     Breakpoint.ZERO {
         Modifier

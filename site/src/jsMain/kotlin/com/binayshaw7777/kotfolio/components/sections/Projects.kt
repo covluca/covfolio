@@ -6,6 +6,7 @@ import com.binayshaw7777.kotfolio.components.styles.SectionDescriptionStyle
 import com.binayshaw7777.kotfolio.components.widgets.AppearanceAwareImage
 import com.binayshaw7777.kotfolio.components.widgets.RoundedImage
 import com.binayshaw7777.kotfolio.components.widgets.SectionTitle
+import com.binayshaw7777.kotfolio.components.widgets.WipOverlay
 import com.binayshaw7777.kotfolio.utils.Constants
 import com.binayshaw7777.kotfolio.utils.Res
 import com.binayshaw7777.kotfolio.utils.getAllProjects
@@ -45,18 +46,20 @@ fun Projects() {
 
         SectionTitle(Constants.PROJECT_TITLE)
 
-        SpanText(
-            text = Constants.PROJECT_SECTION_TEXT,
-            modifier = SectionDescriptionStyle.toModifier()
-                .textAlign(TextAlign.Center)
-                .color(
-                    when (ColorMode.current) {
-                        ColorMode.LIGHT -> Colors.Gray
-                        ColorMode.DARK -> Colors.DimGray
-                    }
-                )
-                .fontFamily(Res.Fonts.DM_SANS)
-        )
+        WipOverlay(compact = true) {
+            SpanText(
+                text = Constants.PROJECT_SECTION_TEXT,
+                modifier = SectionDescriptionStyle.toModifier()
+                    .textAlign(TextAlign.Center)
+                    .color(
+                        when (ColorMode.current) {
+                            ColorMode.LIGHT -> Colors.Gray
+                            ColorMode.DARK -> Colors.DimGray
+                        }
+                    )
+                    .fontFamily(Res.Fonts.DM_SANS)
+            )
+        }
 
         SimpleGrid(
             numColumns = numColumns(base = 1, sm = 2, md = 3),
@@ -66,10 +69,12 @@ fun Projects() {
 
             repeat(allProjects.size) {
                 val project = allProjects[it]
-                RoundedImage(
-                    src = project.first,
-                    navigateTo = project.second
-                )
+                WipOverlay(compact = true) {
+                    RoundedImage(
+                        src = project.first,
+                        navigateTo = project.second
+                    )
+                }
             }
 
             Box(

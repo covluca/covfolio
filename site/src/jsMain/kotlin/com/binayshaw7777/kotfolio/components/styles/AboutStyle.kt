@@ -15,30 +15,30 @@ val AboutStyle by ComponentStyle {
         Modifier
             .width(100.percent)
             .fontSize(3.cssRem)
-            .height(100.vh)
+            .height(64.vh)
     }
     Breakpoint.ZERO {
         Modifier
             .width(100.percent)
             .fontSize(2.5.cssRem)
-            .height(50.vh)
+            .height(32.vh)
     }
     Breakpoint.SM {
         Modifier
             .width(100.percent)
             .fontSize(2.5.cssRem)
-            .height(50.vh)
+            .height(32.vh)
     }
     Breakpoint.MD {
         Modifier
             .width(100.percent)
             .fontSize(2.75.cssRem)
-            .height(85.vh)
+            .height(54.4.vh)
     }
     Breakpoint.LG {
         Modifier
             .width(100.percent)
             .fontSize(3.cssRem)
-            .height(100.vh)
+            .height(64.vh)
     }
 }

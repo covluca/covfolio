@@ -44,49 +44,13 @@ private data class Friend(val id: Int, val name: String, val colorIndex: Int, va
 private val FRIEND_COLORS = listOf(0x3C83EF, 0x7B2CBF, 0xF5A623, 0xE86FB0, 0x17A2B8, 0x8D6E63, 0x5C6BC0, 0x9E9E9E)
 private const val BLOCKED_COLOR = 0xE5484D
 private const val FREE_COLOR = 0x30A46C
-private const val STORAGE_KEY = "organizer.v2"
+private const val STORAGE_KEY = "organizer.v3"
 private val DAY_NAMES = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 private fun hex(c: Int) = "#" + c.toString(16).padStart(6, '0')
 private fun rgba(c: Int, a: Double) = "rgba(${(c shr 16) and 255}, ${(c shr 8) and 255}, ${c and 255}, $a)"
 private fun css(c: Int): CSSColorValue = CssColor(hex(c))
 private fun Friend.color() = FRIEND_COLORS[colorIndex.coerceIn(FRIEND_COLORS.indices)]
-
-private fun createDefaultFriends(): List<Friend> {
-    return listOf(
-        Friend(
-            id = 1,
-            name = "Alex",
-            colorIndex = 0,
-            blocked = buildSet {
-                // Mon-Fri 09:00 - 17:00 and Sat 10:00 - 14:00
-                for (d in 0..4) for (h in 9..16) add(Scheduler.slot(d, h))
-                for (h in 10..13) add(Scheduler.slot(5, h))
-            }
-        ),
-        Friend(
-            id = 2,
-            name = "Sam",
-            colorIndex = 1,
-            blocked = buildSet {
-                // Mon-Fri 12:00 - 20:00 and Sun 11:00 - 16:00
-                for (d in 0..4) for (h in 12..19) add(Scheduler.slot(d, h))
-                for (h in 11..15) add(Scheduler.slot(6, h))
-            }
-        ),
-        Friend(
-            id = 3,
-            name = "Jordan",
-            colorIndex = 2,
-            blocked = buildSet {
-                // Mon-Thu 08:00 - 16:00, all day Friday (travel), and Sat 18:00 - 23:00
-                for (d in 0..3) for (h in 8..15) add(Scheduler.slot(d, h))
-                for (h in Scheduler.HOUR_RANGE) add(Scheduler.slot(4, h))
-                for (h in 18..22) add(Scheduler.slot(5, h))
-            }
-        )
-    )
-}
 
 private fun saveFriends(friends: List<Friend>) {
     try {
@@ -100,12 +64,10 @@ private fun saveFriends(friends: List<Friend>) {
 }
 
 private fun loadFriends(): List<Friend> = try {
+    localStorage.removeItem("organizer.v1")
+    localStorage.removeItem("organizer.v2")
     val raw = localStorage.getItem(STORAGE_KEY)
-    if (raw == null) {
-        val defaults = createDefaultFriends()
-        saveFriends(defaults)
-        defaults
-    } else if (raw.isEmpty()) {
+    if (raw.isNullOrEmpty()) {
         emptyList()
     } else {
         raw.split("\n").mapNotNull { line ->
@@ -118,7 +80,7 @@ private fun loadFriends(): List<Friend> = try {
         }.distinctBy { it.id }
     }
 } catch (_: Throwable) {
-    createDefaultFriends()
+    emptyList()
 }
 
 val OrganizerCellStyle by ComponentStyle {
@@ -166,6 +128,7 @@ fun Organizer() {
             window.removeEventListener("blur", stop)
         }
     }
+    //Feel free
 
     val selected = friends.firstOrNull { it.id == selectedId }
 
@@ -295,23 +258,6 @@ fun Organizer() {
                     .onClick { addFriend() }
                     .title("Add friend")
             )
-
-            if (friends.isEmpty()) {
-                SpanText(
-                    "Load sample group",
-                    OrganizerChipStyle.toModifier()
-                        .border(1.px, LineStyle.Dashed, css(FREE_COLOR))
-                        .color(css(FREE_COLOR))
-                        .onClick {
-                            friends.clear()
-                            val defaults = createDefaultFriends()
-                            friends.addAll(defaults)
-                            saveFriends(defaults)
-                            selectedId = null
-                        }
-                        .title("Populate sample friends")
-                )
-            }
         }
 
         // Status bar / Legend / Color Picker
@@ -322,7 +268,7 @@ fun Organizer() {
         ) {
             when {
                 friends.isEmpty() -> {
-                    SpanText("No friends added yet. Add a friend or click 'Load sample group' above to begin.")
+                    SpanText("Add a friend above or click any hour to start blocking unavailable times.")
                 }
                 selected != null -> {
                     Swatch(Modifier.backgroundColor(css(BLOCKED_COLOR)))
@@ -543,6 +489,17 @@ fun Organizer() {
                                             onClick {
                                                 // Switch to editing schedule
                                                 selectedId = friends.first().id
+                                            }
+                                        } else {
+                                            onMouseDown {
+                                                it.preventDefault()
+                                                val id = 1
+                                                val name = newName.trim().ifEmpty { "Friend 1" }
+                                                friends.add(Friend(id, name, 0, setOf(slot)))
+                                                saveFriends(friends)
+                                                newName = ""
+                                                selectedId = id
+                                                paintValue = true
                                             }
                                         }
                                     }

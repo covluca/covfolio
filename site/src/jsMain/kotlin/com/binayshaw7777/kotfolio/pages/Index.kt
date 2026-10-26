@@ -11,8 +11,10 @@ import com.binayshaw7777.kotfolio.components.sections.Home
 import com.binayshaw7777.kotfolio.components.sections.Photography
 import com.binayshaw7777.kotfolio.components.sections.Projects
 import com.binayshaw7777.kotfolio.components.sections.SkillsAndTools
+import com.binayshaw7777.kotfolio.components.widgets.WipOverlay
 import com.binayshaw7777.kotfolio.utils.Res
 import com.varabyte.kobweb.compose.foundation.layout.*
+import org.jetbrains.compose.web.css.cssRem
 
 @Page
 @Composable
@@ -31,9 +33,9 @@ fun HomePage() {
 
                     Experience()
 
-                    SkillsAndTools()
+                    WipOverlay { SkillsAndTools() }
 
-                    Photography()
+                    WipOverlay { Photography() }
 
                     Projects()
                 }

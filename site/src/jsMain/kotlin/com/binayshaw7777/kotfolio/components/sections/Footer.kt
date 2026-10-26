@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import com.binayshaw7777.kotfolio.components.styles.ButtonStyle
 import com.binayshaw7777.kotfolio.components.widgets.AppearanceAwareImage
 import com.binayshaw7777.kotfolio.components.widgets.IconButtonNoHover
+import com.binayshaw7777.kotfolio.components.widgets.WipOverlay
 import com.varabyte.kobweb.compose.foundation.layout.Box
 import com.varabyte.kobweb.compose.ui.Alignment
 import com.varabyte.kobweb.compose.ui.Modifier
@@ -118,53 +119,54 @@ fun FooterContent(
             .then(modifier),
         contentAlignment = Alignment.Center
     ) {
+        WipOverlay(compact = true) {
+            Column(
+                modifier = Modifier.fillMaxWidth().margin(top = 2.cssRem),
+                horizontalAlignment = footerColumnAlignment
+            ) {
 
-        Column(
-            modifier = Modifier.fillMaxWidth().margin(top = 2.cssRem),
-            horizontalAlignment = footerColumnAlignment
-        ) {
+                SpanText(
+                    text = "Feel free to reach out.",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .color(
+                            when (ColorMode.current) {
+                                ColorMode.LIGHT -> Colors.Gray
+                                ColorMode.DARK -> Colors.DimGray
+                            }
+                        )
+                        .textAlign(footerTextAlignment)
+                        .fontSize(FontSize.Small)
+                )
 
-            SpanText(
-                text = "Feel free to reach out to me via mail or any of the listed mediums",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .color(
-                        when (ColorMode.current) {
-                            ColorMode.LIGHT -> Colors.Gray
-                            ColorMode.DARK -> Colors.DimGray
-                        }
-                    )
-                    .textAlign(footerTextAlignment)
-                    .fontSize(FontSize.Small)
-            )
+                val ctx = rememberPageContext()
 
-            val ctx = rememberPageContext()
+                if (breakpoint >= Breakpoint.MD) {
 
-            if (breakpoint >= Breakpoint.MD) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(topBottom = 2.cssRem),
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
 
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(topBottom = 2.cssRem),
-                    horizontalArrangement = Arrangement.Start,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                        EmailAndResume(ctx)
 
-                    EmailAndResume(ctx)
+                        Spacer()
 
-                    Spacer()
+                        NetworkingIconButtons(ctx)
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(topBottom = 2.cssRem),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        EmailAndResume(ctx)
 
-                    NetworkingIconButtons(ctx)
-                }
-            } else {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(topBottom = 2.cssRem),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    EmailAndResume(ctx)
+                        Spacer()
 
-                    Spacer()
-
-                    NetworkingIconButtons(ctx, Modifier.margin(top = 2.cssRem))
+                        NetworkingIconButtons(ctx, Modifier.margin(top = 2.cssRem))
+                    }
                 }
             }
         }
