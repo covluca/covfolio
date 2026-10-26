@@ -34,14 +34,18 @@ import com.varabyte.kobweb.compose.css.PointerEvents
 import com.varabyte.kobweb.compose.dom.ElementRefScope
 import com.varabyte.kobweb.compose.dom.ref
 import com.varabyte.kobweb.compose.ui.styleModifier
+import com.varabyte.kobweb.silk.components.text.SpanText
 import com.varabyte.kobweb.silk.theme.breakpoint.rememberBreakpoint
 import org.jetbrains.compose.web.ExperimentalComposeWebApi
 import org.jetbrains.compose.web.css.CSSAngleValue
 import org.jetbrains.compose.web.css.Position
+import org.jetbrains.compose.web.css.mm
 import org.jetbrains.compose.web.css.px
 import org.jetbrains.compose.web.css.rad
 import org.jetbrains.compose.web.css.vw
 import org.w3c.dom.HTMLImageElement
+import kotlin.math.PI
+import kotlin.math.atan2
 
 val PageContentStyle by ComponentStyle {
     base { Modifier.fillMaxSize().padding(leftRight = 2.cssRem, top = 4.cssRem) }
@@ -96,13 +100,30 @@ fun SVGBackroundCircle(
 }
 
 @Composable
+fun SVGAnima(
+    modifier: Modifier,
+    ref: ElementRefScope<HTMLImageElement>? = null,
+    image: String
+) {
+    AppearanceAwareImage(
+        src = image,
+        modifier = modifier,
+        ref = ref
+    )
+}
+
+@Composable
 fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
 
     val breakpoint = rememberBreakpoint()
 
     var circleElement by remember { mutableStateOf<HTMLImageElement?>(null) }
     var cursorPos by remember { mutableStateOf(Point(0.0, 0.0)) }
-    var centerPos by remember { mutableStateOf(Point(0.0, 0.0)) }
+    var centerPos = Point(30.0, 30.0)
+
+    var circlePos = Point.polar(120.0, PI-centerPos.atan2(cursorPos))
+
+
 
     val cursor = if (ColorMode.current.isDark) {
         Res.Images.CUSTOM_CURSOR_DARK
@@ -119,13 +140,14 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
             .fillMaxWidth()
             .minHeight(100.percent)
             .onMouseMove {
-                cursorPos = Point(it.x, it.y)
-                circleElement?.getBoundingClientRect()?.let { rect ->
+
+                cursorPos = Point(it.x.mm.value.toDouble(), it.y.mm.value.toDouble())
+                /*circleElement?.getBoundingClientRect()?.let { rect ->
                     centerPos = Point(
                         x = rect.left + rect.width / 2.0,
                         y = rect.top + rect.height / 2.0
                     )
-                }
+                }*/
             }
             .styleModifier {
                 property("cursor", "url('$cursor'), auto")
@@ -139,24 +161,26 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
             .gridTemplateRows { size(1.fr); size(minContent) },
         contentAlignment = Alignment.Center
     ) {
-        SVGBackroundCircle(
+        SVGAnima(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .pointerEvents(PointerEvents.Auto)
-                .width(40.percent)
-                .rotateX(centerPos.atan2(cursorPos).rad)
-                .rotateY(centerPos.atan2(cursorPos).rad)
-                .rotateZ(centerPos.atan2(cursorPos).rad)
-                .minWidth(50.vw)
+                .width(10.mm)
+                .minWidth(10.vw)
+                .position(Position.Sticky)
+                .left((circlePos.y).mm)
+                .top((-circlePos.x).mm)
+                //.translate((-circlePos.x).mm,(circlePos.y).mm)
                 .styleModifier { property("height", "auto") },
             ref = ref { element ->
                 circleElement = element
                 val rect = element.getBoundingClientRect()
-                centerPos = Point(
+                /*centerPos = Point(
                     x = rect.left + rect.width / 2.0,
                     y = rect.top + rect.height / 2.0
-                )
-            }
+                )*/
+            },
+            image = Res.Images.ANIMA_CIRCLE
         )
 
         Column(
@@ -176,7 +200,15 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
             }
             BackToTopButton()
         }
+
         NavHeader(modifier = Modifier.position(Position.Fixed).top(0.px))
+
+
+        Column(modifier = Modifier.position(Position.Fixed).top(64.px)) {
+            SpanText(cursorPos.toString())
+            SpanText(centerPos.toString())
+            SpanText(circlePos.toString())
+        }
         // Associate the footer with the row that will get pushed off the bottom of the page if it can't fit.
         Footer(breakpoint, Modifier.fillMaxWidth().gridRow(2))
     }

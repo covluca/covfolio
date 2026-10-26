@@ -4,6 +4,9 @@ import com.varabyte.kobweb.compose.ui.graphics.Color
 
 object Res {
     object Images {
+
+        const val ANIMA_CIRCLE = "images/Anima/anima_circle.svg"
+        const val ANIMA_ARC = "images/Anima/anima_arc.svg"
         const val BACKGROUND_CIRCLES = "images/background_circles.svg"
         const val PORTAL_STAR = "images/portal_star.svg"
         const val NAVIGATION_ARROW = "images/Navigation_Arrow.svg"
