@@ -75,5 +75,7 @@ object Res {
         val GLASS_BOX_BORDER_COLOR_LIGHT = Color.Companion.rgb(0xE9E9E9)
         val GLASS_BOX_BORDER_COLOR_DARK = Color.Companion.rgb(0x4E4E4E)
         val DARK_GRAY_TEXT_COLOR = Color.Companion.rgb(0x7B7B7B)
+        val FOUR_D_YELLOW = Color.Companion.rgb(0xFFD600)
+        val FOUR_D_PURPLE = Color.Companion.rgb(0x7B2CBF)
     }
 }

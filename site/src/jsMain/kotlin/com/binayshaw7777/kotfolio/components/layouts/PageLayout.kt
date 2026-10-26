@@ -19,6 +19,7 @@ import com.varabyte.kobweb.silk.components.style.breakpoint.Breakpoint
 import com.varabyte.kobweb.silk.components.style.toModifier
 import com.varabyte.kobweb.silk.theme.colors.ColorMode
 import kotlinx.browser.document
+import kotlinx.browser.window
 import org.jetbrains.compose.web.css.cssRem
 import org.jetbrains.compose.web.css.fr
 import org.jetbrains.compose.web.css.percent
@@ -30,26 +31,103 @@ import com.binayshaw7777.kotfolio.utils.Res
 import com.binayshaw7777.kotfolio.toSitePalette
 import com.binayshaw7777.kotfolio.utils.meth.Point
 import com.binayshaw7777.kotfolio.utils.meth.Pose2d
+import com.varabyte.kobweb.compose.css.AnimationIterationCount
 import com.varabyte.kobweb.compose.css.PointerEvents
 import com.varabyte.kobweb.compose.dom.ElementRefScope
 import com.varabyte.kobweb.compose.dom.ref
+import com.varabyte.kobweb.compose.ui.graphics.Colors
 import com.varabyte.kobweb.compose.ui.styleModifier
+import com.varabyte.kobweb.silk.components.animation.Keyframes
+import com.varabyte.kobweb.silk.components.animation.toAnimation
 import com.varabyte.kobweb.silk.components.text.SpanText
 import com.varabyte.kobweb.silk.theme.breakpoint.rememberBreakpoint
 import org.jetbrains.compose.web.ExperimentalComposeWebApi
+import org.jetbrains.compose.web.css.AnimationDirection
+import org.jetbrains.compose.web.css.AnimationTimingFunction
 import org.jetbrains.compose.web.css.CSSAngleValue
+import org.jetbrains.compose.web.css.Color
 import org.jetbrains.compose.web.css.Position
 import org.jetbrains.compose.web.css.mm
 import org.jetbrains.compose.web.css.px
 import org.jetbrains.compose.web.css.rad
+import org.jetbrains.compose.web.css.s
 import org.jetbrains.compose.web.css.vw
+import org.jetbrains.compose.web.dom.Div
+import org.w3c.dom.HTMLDivElement
 import org.w3c.dom.HTMLImageElement
 import kotlin.math.PI
 import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.sin
+import kotlin.time.Duration.Companion.seconds
 
 val PageContentStyle by ComponentStyle {
     base { Modifier.fillMaxSize().padding(leftRight = 2.cssRem, top = 4.cssRem) }
     Breakpoint.MD { Modifier.maxWidth(60.cssRem) }
+}
+
+val ShiftRightKeyframes by Keyframes {
+    from { Modifier.left(0.px) }
+    to { Modifier.left(200.px) }
+}
+
+val MoveBeamKeyFrames by Keyframes {
+    0.percent {
+        Modifier
+            .backgroundColor(Res.Colors.FOUR_D_PURPLE)
+            .styleModifier {
+                property("left", "var(--circle-x)")
+                property("top", "var(--circle-y)")
+                property("transform", "translate(-50%, -50%) rotate(var(--beam-angle))")
+                property("box-shadow", "0 0 12px 3px #7B2CBF, 0 0 24px 6px rgba(123, 44, 191, 0.6)")
+            }
+    }
+    100.percent {
+        Modifier
+            .backgroundColor(Res.Colors.FOUR_D_YELLOW)
+            .styleModifier {
+                property("left", "var(--cursor-x)")
+                property("top", "var(--cursor-y)")
+                property("transform", "translate(-50%, -50%) rotate(var(--beam-angle))")
+                property("box-shadow", "0 0 12px 3px #FFD600, 0 0 24px 6px rgba(255, 214, 0, 0.6)")
+            }
+    }
+}
+
+val OrbitBeamKeyFrames by Keyframes {
+    0.percent {
+        Modifier
+            .backgroundColor(Res.Colors.FOUR_D_PURPLE)
+            .styleModifier {
+                property("left", "var(--circle-x)")
+                property("top", "var(--circle-y)")
+                property("transform", "translate(-50%, -50%) rotate(0deg) translateY(calc(-1 * var(--orbit-radius)))")
+                property("box-shadow", "0 0 12px 3px #7B2CBF, 0 0 24px 6px rgba(123, 44, 191, 0.6)")
+            }
+    }
+    50.percent {
+        Modifier
+            .backgroundColor(Res.Colors.FOUR_D_YELLOW)
+            .styleModifier {
+                property("left", "var(--circle-x)")
+                property("top", "var(--circle-y)")
+                property("transform", "translate(-50%, -50%) rotate(180deg) translateY(calc(-1 * var(--orbit-radius)))")
+                property("box-shadow", "0 0 12px 3px #FFD600, 0 0 24px 6px rgba(255, 214, 0, 0.6)")
+            }
+    }
+    100.percent {
+        Modifier
+            .backgroundColor(Res.Colors.FOUR_D_PURPLE)
+            .styleModifier {
+                property("left", "var(--circle-x)")
+                property("top", "var(--circle-y)")
+                property("transform", "translate(-50%, -50%) rotate(360deg) translateY(calc(-1 * var(--orbit-radius)))")
+                property("box-shadow", "0 0 12px 3px #7B2CBF, 0 0 24px 6px rgba(123, 44, 191, 0.6)")
+            }
+    }
 }
 
 // NOTE: This is a fun little graphic that showcases what you can do with SVG. However, this probably does not make
@@ -118,12 +196,14 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
     val breakpoint = rememberBreakpoint()
 
     var circleElement by remember { mutableStateOf<HTMLImageElement?>(null) }
-    var cursorPos by remember { mutableStateOf(Point(0.0, 0.0)) }
+    var beamElement by remember { mutableStateOf<HTMLDivElement?>(null) }
+    var clientPos by remember { mutableStateOf(Point(0.0, 0.0)) }
+    var scrollPos by remember { mutableStateOf(Point(0.0, 0.0)) }
+    var isMouseDown by remember { mutableStateOf(false) }
+    val cursorPos = Point(clientPos.x + scrollPos.x, clientPos.y + scrollPos.y)
     var centerPos = Point(30.0, 30.0)
 
     var circlePos = Point.polar(120.0, PI-centerPos.atan2(cursorPos))
-
-
 
     val cursor = if (ColorMode.current.isDark) {
         Res.Images.CUSTOM_CURSOR_DARK
@@ -135,13 +215,125 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
         document.title = "Barbu Luca - $title"
     }
 
+    LaunchedEffect(Unit) {
+        window.addEventListener("scroll", {
+            scrollPos = Point(window.scrollX, window.scrollY)
+        })
+        window.addEventListener("mousedown", {
+            isMouseDown = true
+        })
+        window.addEventListener("mouseup", {
+            isMouseDown = false
+        })
+        window.addEventListener("dragend", {
+            isMouseDown = false
+        })
+        window.addEventListener("blur", {
+            isMouseDown = false
+        })
+
+        val mmToPx = 3.7795275591
+        var lastTimeMs: Double? = null
+        var orbitAngle = 0.0
+        var currentRadius: Double? = null
+        var attackTime = 0.0
+        var beamX = 0.0
+        var beamY = 0.0
+        var beamAngleRad = PI / 2.0
+        var colorMix = 0.0
+        var launchOriginX = 0.0
+        var launchOriginY = 0.0
+        var wasMouseDown = false
+
+        fun step(timestampMs: Double) {
+            val dt = if (lastTimeMs == null) 0.016 else ((timestampMs - lastTimeMs!!) / 1000.0).coerceIn(0.0, 0.1)
+            lastTimeMs = timestampMs
+
+            val liveCursor = Point(clientPos.x + scrollPos.x, clientPos.y + scrollPos.y)
+            val liveCircle = Point.polar(120.0, PI - centerPos.atan2(liveCursor))
+            val circleRadiusPx = max(5.0 * mmToPx, window.innerWidth * 0.05)
+            val circleCenterX = liveCircle.y * mmToPx + circleRadiusPx
+            val circleCenterY = -liveCircle.x * mmToPx + circleRadiusPx
+            val orbitRadius = circleRadiusPx + 10.0
+
+            if (currentRadius == null) {
+                currentRadius = orbitRadius
+                beamX = circleCenterX + orbitRadius
+                beamY = circleCenterY
+            }
+
+            if (isMouseDown) {
+                if (!wasMouseDown) {
+                    wasMouseDown = true
+                    attackTime = 0.0
+                    launchOriginX = beamX
+                    launchOriginY = beamY
+                }
+                attackTime += dt
+                val p = (1.0 - cos(PI * attackTime)) / 2.0
+                val aimAngle = atan2(liveCursor.y - circleCenterY, liveCursor.x - circleCenterX)
+                val orbitEdgeX = circleCenterX + orbitRadius * cos(aimAngle)
+                val orbitEdgeY = circleCenterY + orbitRadius * sin(aimAngle)
+                val originBlend = (1.0 - cos(PI * attackTime.coerceIn(0.0, 1.0))) / 2.0
+                val startX = launchOriginX + (orbitEdgeX - launchOriginX) * originBlend
+                val startY = launchOriginY + (orbitEdgeY - launchOriginY) * originBlend
+
+                beamX = startX + (liveCursor.x - startX) * p
+                beamY = startY + (liveCursor.y - startY) * p
+
+                val angleDiff = atan2(sin(aimAngle - beamAngleRad), cos(aimAngle - beamAngleRad))
+                beamAngleRad += angleDiff * (1.0 - exp(-15.0 * dt))
+                colorMix += (p - colorMix) * (1.0 - exp(-12.0 * dt))
+            } else {
+                if (wasMouseDown) {
+                    wasMouseDown = false
+                    orbitAngle = atan2(beamY - circleCenterY, beamX - circleCenterX)
+                    currentRadius = hypot(beamX - circleCenterX, beamY - circleCenterY)
+                }
+                orbitAngle += PI * dt
+                val r = currentRadius!! + (orbitRadius - currentRadius!!) * (1.0 - exp(-10.0 * dt))
+                currentRadius = r
+                beamX = circleCenterX + r * cos(orbitAngle)
+                beamY = circleCenterY + r * sin(orbitAngle)
+
+                val targetAngle = orbitAngle + PI / 2.0
+                val angleDiff = atan2(sin(targetAngle - beamAngleRad), cos(targetAngle - beamAngleRad))
+                beamAngleRad += angleDiff * (1.0 - exp(-12.0 * dt))
+
+                val targetColorMix = (1.0 - cos(orbitAngle)) / 2.0
+                colorMix += (targetColorMix - colorMix) * (1.0 - exp(-10.0 * dt))
+            }
+
+            beamElement?.style?.apply {
+                left = "${beamX}px"
+                top = "${beamY}px"
+                transform = "translate(-50%, -50%) rotate(${beamAngleRad}rad)"
+                val red = (123 + (255 - 123) * colorMix).toInt().coerceIn(0, 255)
+                val green = (44 + (214 - 44) * colorMix).toInt().coerceIn(0, 255)
+                val blue = (191 + (0 - 191) * colorMix).toInt().coerceIn(0, 255)
+                backgroundColor = "rgb($red, $green, $blue)"
+                boxShadow = "0 0 12px 3px rgb($red, $green, $blue), 0 0 24px 6px rgba($red, $green, $blue, 0.6)"
+            }
+
+            window.requestAnimationFrame(::step)
+        }
+
+        window.requestAnimationFrame(::step)
+    }
+
     Box(
         Modifier
             .fillMaxWidth()
             .minHeight(100.percent)
+            .onMouseDown {
+                isMouseDown = true
+            }
+            .onMouseUp {
+                isMouseDown = false
+            }
             .onMouseMove {
-
-                cursorPos = Point(it.x.mm.value.toDouble(), it.y.mm.value.toDouble())
+                clientPos = Point(it.clientX.toDouble(), it.clientY.toDouble())
+                scrollPos = Point(window.scrollX, window.scrollY)
                 /*circleElement?.getBoundingClientRect()?.let { rect ->
                     centerPos = Point(
                         x = rect.left + rect.width / 2.0,
@@ -161,13 +353,32 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
             .gridTemplateRows { size(1.fr); size(minContent) },
         contentAlignment = Alignment.Center
     ) {
+
+
+// Later
+        Div(
+            Modifier
+                .width(48.px)
+                .height(5.px)
+                .borderRadius(999.px)
+                .backgroundColor(Res.Colors.FOUR_D_PURPLE)
+                .position(Position.Absolute)
+                .pointerEvents(PointerEvents.None)
+                .toAttrs {
+                    ref { element ->
+                        beamElement = element
+                        onDispose { beamElement = null }
+                    }
+                }
+        )
+
         SVGAnima(
             modifier = Modifier
-                .align(Alignment.TopEnd)
+                //.align(Alignment.TopEnd)
                 .pointerEvents(PointerEvents.Auto)
                 .width(10.mm)
                 .minWidth(10.vw)
-                .position(Position.Sticky)
+                .position(Position.Absolute)
                 .left((circlePos.y).mm)
                 .top((-circlePos.x).mm)
                 //.translate((-circlePos.x).mm,(circlePos.y).mm)
@@ -182,6 +393,8 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
             },
             image = Res.Images.ANIMA_CIRCLE
         )
+
+
 
         Column(
             // Isolate the content, because otherwise the absolute-positioned SVG above will render on top of it.
@@ -200,6 +413,8 @@ fun PageLayout(title: String, content: @Composable ColumnScope.() -> Unit) {
             }
             BackToTopButton()
         }
+
+
 
         NavHeader(modifier = Modifier.position(Position.Fixed).top(0.px))
 
