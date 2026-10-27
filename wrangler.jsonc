@@ -3,5 +3,15 @@
   "compatibility_date": "2026-10-26",
   "assets": {
     "directory": "./site/.kobweb/site"
-  }
+  },
+  "routes": [
+    {
+      "pattern": "covluca.com",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.covluca.com",
+      "custom_domain": true
+    }
+  ]
 }
