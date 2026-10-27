@@ -44,7 +44,7 @@ private data class Friend(val id: Int, val name: String, val colorIndex: Int, va
 private val FRIEND_COLORS = listOf(0x3C83EF, 0x7B2CBF, 0xF5A623, 0xE86FB0, 0x17A2B8, 0x8D6E63, 0x5C6BC0, 0x9E9E9E)
 private const val BLOCKED_COLOR = 0xE5484D
 private const val FREE_COLOR = 0x30A46C
-private const val STORAGE_KEY = "organizer.v3"
+private const val STORAGE_KEY = "organizer.v4"
 private val DAY_NAMES = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 private fun hex(c: Int) = "#" + c.toString(16).padStart(6, '0')
@@ -55,8 +55,7 @@ private fun Friend.color() = FRIEND_COLORS[colorIndex.coerceIn(FRIEND_COLORS.ind
 private fun saveFriends(friends: List<Friend>) {
     try {
         localStorage.setItem(STORAGE_KEY, friends.joinToString("\n") { f ->
-            val bits = (0 until Scheduler.SLOTS).joinToString("") { if (it in f.blocked) "1" else "0" }
-            "${f.id}|${f.colorIndex}|${encodeURIComponent(f.name)}|$bits"
+            "${f.id}|${f.colorIndex}|${encodeURIComponent(f.name)}|${Scheduler.encodeSchedule(f.blocked)}"
         })
     } catch (_: Throwable) {
         // Storage may be unavailable (private mode, quota)
@@ -66,6 +65,7 @@ private fun saveFriends(friends: List<Friend>) {
 private fun loadFriends(): List<Friend> = try {
     localStorage.removeItem("organizer.v1")
     localStorage.removeItem("organizer.v2")
+    localStorage.removeItem("organizer.v3")
     val raw = localStorage.getItem(STORAGE_KEY)
     if (raw.isNullOrEmpty()) {
         emptyList()
@@ -75,8 +75,8 @@ private fun loadFriends(): List<Friend> = try {
             if (p.size != 4) return@mapNotNull null
             val id = p[0].toIntOrNull() ?: return@mapNotNull null
             val colorIndex = p[1].toIntOrNull()?.takeIf { it in FRIEND_COLORS.indices } ?: 0
-            val bits = p[3]
-            Friend(id, decodeURIComponent(p[2]), colorIndex, (0 until minOf(bits.length, Scheduler.SLOTS)).filter { bits[it] == '1' }.toSet())
+            val blocked = Scheduler.decodeSchedule(p[3]) ?: return@mapNotNull null
+            Friend(id, decodeURIComponent(p[2]), colorIndex, blocked)
         }.distinctBy { it.id }
     }
 } catch (_: Throwable) {
@@ -86,7 +86,7 @@ private fun loadFriends(): List<Friend> = try {
 val OrganizerCellStyle by ComponentStyle {
     base {
         Modifier
-            .height(1.35.cssRem)
+            .height(1.65.cssRem)
             .borderRadius(4.px)
             .cursor(Cursor.Pointer)
             .styleModifier { property("transition", "opacity 80ms, background 120ms") }
@@ -117,6 +117,12 @@ fun Organizer() {
     var selectedId by remember { mutableStateOf<Int?>(friends.firstOrNull()?.id) } // Default to first friend so user can immediately click & block
     var previewRemovedId by remember { mutableStateOf<Int?>(null) } // override for tied one-removed configurations
     var newName by remember { mutableStateOf("") }
+    var importCode by remember { mutableStateOf("") }
+    var importError by remember { mutableStateOf(false) }
+    var copiedFriendId by remember { mutableStateOf<Int?>(null) }
+    var tabCodeInput by remember { mutableStateOf("") }
+    var tabCodeInvalid by remember { mutableStateOf(false) }
+    var isEditingTabCode by remember { mutableStateOf(false) }
     var paintValue by remember { mutableStateOf<Boolean?>(null) } // non-null while dragging
 
     DisposableEffect(Unit) {
@@ -128,9 +134,26 @@ fun Organizer() {
             window.removeEventListener("blur", stop)
         }
     }
-    //Feel free
 
     val selected = friends.firstOrNull { it.id == selectedId }
+
+    LaunchedEffect(selected?.id) {
+        isEditingTabCode = false
+        tabCodeInvalid = false
+        tabCodeInput = if (selected != null) Scheduler.encodeFriend(selected.name, selected.blocked) else ""
+    }
+
+    LaunchedEffect(selected?.name, selected?.blocked, isEditingTabCode) {
+        if (selected != null && !isEditingTabCode) {
+            tabCodeInput = Scheduler.encodeFriend(selected.name, selected.blocked)
+            tabCodeInvalid = false
+        }
+    }
+
+    fun nextColorIndex(): Int {
+        val used = friends.map { it.colorIndex }.toSet()
+        return FRIEND_COLORS.indices.firstOrNull { it !in used } ?: (friends.size % FRIEND_COLORS.size)
+    }
 
     fun replace(f: Friend) {
         val i = friends.indexOfFirst { it.id == f.id }
@@ -139,22 +162,68 @@ fun Organizer() {
     }
 
     fun addFriend() {
+        val raw = newName.trim()
+        // If user pasted a Name:code directly into the Add friend field, import it seamlessly
+        if (raw.contains(':')) {
+            val decoded = Scheduler.decodeFriend(raw)
+            if (decoded != null && decoded.name != null) {
+                val id = (friends.maxOfOrNull { it.id } ?: 0) + 1
+                friends.add(Friend(id, decoded.name, nextColorIndex(), decoded.blocked))
+                saveFriends(friends)
+                newName = ""
+                selectedId = id
+                return
+            }
+        }
         val id = (friends.maxOfOrNull { it.id } ?: 0) + 1
-        val name = newName.trim().ifEmpty { "Friend $id" }
-        val used = friends.map { it.colorIndex }.toSet()
-        val color = FRIEND_COLORS.indices.firstOrNull { it !in used } ?: (friends.size % FRIEND_COLORS.size)
-        friends.add(Friend(id, name, color, emptySet()))
+        val name = raw.ifEmpty { "Friend $id" }
+        friends.add(Friend(id, name, nextColorIndex(), emptySet()))
         saveFriends(friends)
         newName = ""
         selectedId = id
     }
 
+    fun addFriendFromCode() {
+        val decoded = Scheduler.decodeFriend(importCode)
+        if (decoded == null) {
+            importError = true
+            return
+        }
+        val id = (friends.maxOfOrNull { it.id } ?: 0) + 1
+        val explicitName = newName.trim()
+        val name = explicitName.ifEmpty { decoded.name ?: "Friend $id" }
+        friends.add(Friend(id, name, nextColorIndex(), decoded.blocked))
+        saveFriends(friends)
+        importCode = ""
+        importError = false
+        if (explicitName.isNotEmpty()) newName = ""
+        selectedId = id
+    }
+
+    fun copyFriendCode(friend: Friend) {
+        val code = Scheduler.encodeFriend(friend.name, friend.blocked)
+        isEditingTabCode = false
+        tabCodeInvalid = false
+        tabCodeInput = code
+        try {
+            window.navigator.clipboard.writeText(code)
+        } catch (_: Throwable) {
+            // Clipboard API may be unavailable in non-secure contexts
+        }
+        copiedFriendId = friend.id
+        window.setTimeout({
+            if (copiedFriendId == friend.id) copiedFriendId = null
+        }, 1500)
+    }
+
     fun paint(friend: Friend, slot: Int, value: Boolean) {
+        isEditingTabCode = false
         if ((slot in friend.blocked) == value) return
         replace(friend.copy(blocked = if (value) friend.blocked + slot else friend.blocked - slot))
     }
 
     fun toggleDay(friend: Friend, day: Int) {
+        isEditingTabCode = false
         val daySlots = Scheduler.HOUR_RANGE.map { Scheduler.slot(day, it) }
         val allBlocked = daySlots.all { it in friend.blocked }
         val updated = if (allBlocked) friend.blocked - daySlots.toSet() else friend.blocked + daySlots
@@ -162,6 +231,7 @@ fun Organizer() {
     }
 
     fun toggleHour(friend: Friend, hour: Int) {
+        isEditingTabCode = false
         val hourSlots = (0 until Scheduler.DAYS).map { Scheduler.slot(it, hour) }
         val allBlocked = hourSlots.all { it in friend.blocked }
         val updated = if (allBlocked) friend.blocked - hourSlots.toSet() else friend.blocked + hourSlots
@@ -232,7 +302,7 @@ fun Organizer() {
             Input(
                 InputType.Text,
                 attrs = Modifier
-                    .width(8.5.cssRem)
+                    .width(8.cssRem)
                     .padding(topBottom = 0.25.cssRem, leftRight = 0.4.cssRem)
                     .fontSize(0.9.cssRem)
                     .border(0.px)
@@ -258,21 +328,57 @@ fun Organizer() {
                     .onClick { addFriend() }
                     .title("Add friend")
             )
+
+            Input(
+                InputType.Text,
+                attrs = Modifier
+                    .width(9.5.cssRem)
+                    .padding(topBottom = 0.25.cssRem, leftRight = 0.4.cssRem)
+                    .fontSize(0.9.cssRem)
+                    .border(0.px)
+                    .borderBottom(1.px, LineStyle.Solid, if (importError) css(BLOCKED_COLOR) else lineColor)
+                    .styleModifier {
+                        property("background", "transparent")
+                        property("color", "inherit")
+                        property("font-family", "inherit")
+                        property("outline", "none")
+                    }
+                    .toAttrs {
+                        value(importCode)
+                        placeholder("Paste friend code...")
+                        onInput {
+                            importCode = it.value
+                            if (importError) importError = false
+                        }
+                        onKeyDown { if (it.key == "Enter") addFriendFromCode() }
+                    }
+            )
+
+            SpanText(
+                if (importError) "Invalid code" else "Import code",
+                OrganizerChipStyle.toModifier()
+                    .border(1.px, LineStyle.Solid, if (importError) css(BLOCKED_COLOR) else lineColor)
+                    .then(if (importError) Modifier.color(css(BLOCKED_COLOR)) else Modifier)
+                    .onClick { addFriendFromCode() }
+                    .title("Create a friend tab from a shared schedule code")
+            )
         }
 
-        // Status bar / Legend / Color Picker
+        // Status bar / Legend / Friend Code / Color Picker
         Row(
-            Modifier.gap(1.cssRem).fontFamily(Res.Fonts.DM_SANS).fontSize(0.9.cssRem).color(mutedText)
+            Modifier.gap(0.85.cssRem).fontFamily(Res.Fonts.DM_SANS).fontSize(0.9.cssRem).color(mutedText)
                 .styleModifier { property("flex-wrap", "wrap") },
             verticalAlignment = Alignment.CenterVertically
         ) {
             when {
                 friends.isEmpty() -> {
-                    SpanText("Add a friend above or click any hour to start blocking unavailable times.")
+                    SpanText("Add a friend, paste a friend's code above, or click any slot to start blocking unavailable times.")
                 }
                 selected != null -> {
+                    val isCopied = copiedFriendId == selected.id
+
                     Swatch(Modifier.backgroundColor(css(BLOCKED_COLOR)))
-                    SpanText("Click or drag to block unavailable hours (${selected.blocked.size}h blocked)")
+                    SpanText("Click or drag to block (${selected.blocked.size}h blocked)")
 
                     if (friends.size > 1) {
                         SpanText("·")
@@ -286,8 +392,70 @@ fun Organizer() {
                             Modifier.cursor(Cursor.Pointer)
                                 .textDecorationLine(TextDecorationLine.Underline)
                                 .color(strongText)
-                                .onClick { replace(selected.copy(blocked = emptySet())) }
+                                .onClick {
+                                    isEditingTabCode = false
+                                    replace(selected.copy(blocked = emptySet()))
+                                }
                                 .title("Clear all blocked hours for ${selected.name}")
+                        )
+                    }
+
+                    SpanText("·")
+                    Row(Modifier.gap(0.4.cssRem), verticalAlignment = Alignment.CenterVertically) {
+                        SpanText("Share code:")
+                        Input(
+                            InputType.Text,
+                            attrs = Modifier
+                                .width(10.5.cssRem)
+                                .padding(topBottom = 0.15.cssRem, leftRight = 0.45.cssRem)
+                                .borderRadius(4.px)
+                                .fontSize(0.85.cssRem)
+                                .fontFamily(Res.Fonts.Space_Grotesk)
+                                .color(strongText)
+                                .border(1.px, LineStyle.Solid, if (tabCodeInvalid) css(BLOCKED_COLOR) else lineColor)
+                                .styleModifier {
+                                    property("background", "transparent")
+                                    property("outline", "none")
+                                }
+                                .toAttrs {
+                                    value(tabCodeInput)
+                                    attr("title", "Shareable code for ${selected.name} (copy to share, or paste a code here to update this tab)")
+                                    onFocusIn { isEditingTabCode = true }
+                                    onFocusOut {
+                                        isEditingTabCode = false
+                                        tabCodeInvalid = false
+                                        tabCodeInput = Scheduler.encodeFriend(selected.name, selected.blocked)
+                                    }
+                                    onKeyDown { evt ->
+                                        if (evt.key == "Enter") {
+                                            isEditingTabCode = false
+                                            tabCodeInvalid = false
+                                            tabCodeInput = Scheduler.encodeFriend(selected.name, selected.blocked)
+                                        }
+                                    }
+                                    onInput { evt ->
+                                        isEditingTabCode = true
+                                        tabCodeInput = evt.value
+                                        val decoded = Scheduler.decodeFriend(evt.value)
+                                        if (decoded != null) {
+                                            tabCodeInvalid = false
+                                            val updatedName = decoded.name ?: selected.name
+                                            replace(selected.copy(name = updatedName, blocked = decoded.blocked))
+                                        } else {
+                                            tabCodeInvalid = true
+                                        }
+                                    }
+                                }
+                        )
+                        SpanText(
+                            if (isCopied) "Copied!" else "Copy",
+                            OrganizerChipStyle.toModifier()
+                                .padding(topBottom = 0.15.cssRem, leftRight = 0.6.cssRem)
+                                .fontSize(0.82.cssRem)
+                                .border(1.px, LineStyle.Solid, if (isCopied) css(FREE_COLOR) else lineColor)
+                                .color(if (isCopied) css(FREE_COLOR) else strongText)
+                                .onClick { copyFriendCode(selected) }
+                                .title("Copy shareable code for ${selected.name}")
                         )
                     }
 
@@ -349,7 +517,7 @@ fun Organizer() {
                             SpanText("Leaving any single person out would not increase mutual free time.")
                         }
                         friends.size == 1 -> {
-                            SpanText("Add at least one more friend to compare and calculate group free time.")
+                            SpanText("Add or import at least one more friend to compare and calculate group free time.")
                         }
                     }
                 }
@@ -361,10 +529,10 @@ fun Organizer() {
             Modifier.fillMaxWidth().styleModifier { property("overflow-x", "auto") }
         ) {
             Div(
-                Modifier.fillMaxWidth().minWidth(32.cssRem).styleModifier {
+                Modifier.fillMaxWidth().minWidth(36.cssRem).styleModifier {
                     property("display", "grid")
-                    property("grid-template-columns", "2.75rem repeat(7, minmax(0, 1fr))")
-                    property("gap", "3px")
+                    property("grid-template-columns", "max-content repeat(7, minmax(0, 1fr))")
+                    property("gap", "4px")
                     property("user-select", "none")
                     property("touch-action", "manipulation")
                 }.toAttrs()
@@ -376,8 +544,9 @@ fun Organizer() {
                 DAY_NAMES.forEachIndexed { dayIndex, day ->
                     Div(
                         Modifier
-                            .fontSize(0.8.cssRem)
+                            .fontSize(0.95.cssRem)
                             .fontWeight(FontWeight.Bold)
+                            .color(strongText)
                             .textAlign(TextAlign.Center)
                             .padding(bottom = 0.25.cssRem)
                             .then(if (selected != null) Modifier.cursor(Cursor.Pointer) else Modifier)
@@ -392,19 +561,25 @@ fun Organizer() {
                     }
                 }
 
-                // Grid rows for each hour (08:00..22:00)
+                // Grid rows for each 1-hour slot (8:00-9:00 .. 21:00-22:00)
                 for (hour in Scheduler.HOUR_RANGE) {
-                    val hourLabel = hour.toString().padStart(2, '0') + ":00"
+                    val hourLabel = Scheduler.slotRangeLabel(hour)
 
-                    // Hour label (click to toggle across all days when a friend is selected)
+                    // Hour range label (click to toggle across all days when a friend is selected)
                     Div(
                         Modifier
-                            .fontSize(0.7.cssRem)
-                            .color(mutedText)
-                            .fontFamily(Res.Fonts.DM_SANS)
-                            .lineHeight(1.35.cssRem)
+                            .fontSize(0.95.cssRem)
+                            .fontWeight(FontWeight.Bold)
+                            .color(strongText)
+                            .fontFamily(Res.Fonts.Space_Grotesk)
+                            .lineHeight(1.65.cssRem)
                             .textAlign(TextAlign.Right)
-                            .padding(right = 0.3.cssRem)
+                            .padding(right = 0.55.cssRem)
+                            .styleModifier {
+                                property("white-space", "nowrap")
+                                property("font-variant-numeric", "tabular-nums")
+                                property("letter-spacing", "0.02em")
+                            }
                             .then(if (selected != null) Modifier.cursor(Cursor.Pointer) else Modifier)
                             .toAttrs {
                                 if (selected != null) {
@@ -413,7 +588,7 @@ fun Organizer() {
                                 }
                             }
                     ) {
-                        SpanText(hour.toString().padStart(2, '0'))
+                        SpanText(hourLabel)
                     }
 
                     // 7 day slots for this hour

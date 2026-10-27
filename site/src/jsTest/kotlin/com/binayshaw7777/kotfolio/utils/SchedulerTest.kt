@@ -11,16 +11,17 @@ class SchedulerTest {
     @Test
     fun testSlotIndexAndConversion() {
         assertEquals(0, Scheduler.slot(0, 8))
-        assertEquals(14, Scheduler.slot(0, 22))
-        assertEquals(15, Scheduler.slot(1, 8))
-        assertEquals(104, Scheduler.slot(6, 22))
+        assertEquals(13, Scheduler.slot(0, 21))
+        assertEquals(14, Scheduler.slot(1, 8))
+        assertEquals(97, Scheduler.slot(6, 21))
+        assertEquals(98, Scheduler.SLOTS)
 
         assertEquals(0, Scheduler.day(0))
         assertEquals(8, Scheduler.hour(0))
-        assertEquals(0, Scheduler.day(14))
-        assertEquals(22, Scheduler.hour(14))
-        assertEquals(6, Scheduler.day(104))
-        assertEquals(22, Scheduler.hour(104))
+        assertEquals(0, Scheduler.day(13))
+        assertEquals(21, Scheduler.hour(13))
+        assertEquals(6, Scheduler.day(97))
+        assertEquals(21, Scheduler.hour(97))
 
         for (d in 0 until Scheduler.DAYS) {
             for (h in Scheduler.HOUR_RANGE) {
@@ -33,7 +34,86 @@ class SchedulerTest {
         assertFailsWith<IllegalArgumentException> { Scheduler.slot(-1, 8) }
         assertFailsWith<IllegalArgumentException> { Scheduler.slot(7, 8) }
         assertFailsWith<IllegalArgumentException> { Scheduler.slot(0, 7) }
-        assertFailsWith<IllegalArgumentException> { Scheduler.slot(0, 23) }
+        assertFailsWith<IllegalArgumentException> { Scheduler.slot(0, 22) }
+    }
+
+    @Test
+    fun testSlotRangeLabels() {
+        val labels = Scheduler.HOUR_RANGE.map { Scheduler.slotRangeLabel(it) }
+        assertEquals(14, labels.size)
+        assertEquals("8:00-9:00", labels.first())
+        assertEquals("9:00-10:00", Scheduler.slotRangeLabel(9))
+        assertEquals("21:00-22:00", labels.last())
+        assertTrue(22 !in Scheduler.HOUR_RANGE)
+        assertTrue("22:00-23:00" !in labels)
+    }
+
+    @Test
+    fun testEncodeAndDecodeSchedule() {
+        // Empty schedule -> "0"
+        assertEquals("0", Scheduler.encodeSchedule(emptySet()))
+        assertEquals(emptySet(), Scheduler.decodeSchedule("0"))
+        assertEquals(emptySet(), Scheduler.decodeSchedule("000"))
+
+        // Single slot (first and last)
+        val firstOnly = setOf(0)
+        assertEquals("1", Scheduler.encodeSchedule(firstOnly))
+        assertEquals(firstOnly, Scheduler.decodeSchedule(Scheduler.encodeSchedule(firstOnly)))
+
+        val lastOnly = setOf(Scheduler.SLOTS - 1)
+        val lastCode = Scheduler.encodeSchedule(lastOnly)
+        assertEquals(17, lastCode.length)
+        assertEquals(lastOnly, Scheduler.decodeSchedule(lastCode))
+
+        // Full schedule (all 98 slots blocked)
+        val full = (0 until Scheduler.SLOTS).toSet()
+        val fullCode = Scheduler.encodeSchedule(full)
+        assertEquals(17, fullCode.length)
+        assertEquals(full, Scheduler.decodeSchedule(fullCode))
+
+        // Arbitrary mixed schedule
+        val sample = setOf(0, 1, 5, 13, 14, 28, 42, 63, 64, 96, 97)
+        val sampleCode = Scheduler.encodeSchedule(sample)
+        assertEquals(sample, Scheduler.decodeSchedule(sampleCode))
+
+        // Invalid codes
+        assertNull(Scheduler.decodeSchedule(""))
+        assertNull(Scheduler.decodeSchedule("   "))
+        assertNull(Scheduler.decodeSchedule("invalid!code"))
+        assertNull(Scheduler.decodeSchedule("000000000000000000")) // 18 chars > MAX_CODE_LEN
+        assertNull(Scheduler.decodeSchedule("00000000000000004"))  // bit 98 out of range (>= 98)
+    }
+
+    @Test
+    fun testEncodeAndDecodeFriend() {
+        val blocked = setOf(0, 14, 28, 97)
+
+        // Default "Friend N" name omits prefix to keep code minimal
+        val defaultCode = Scheduler.encodeFriend("Friend 1", blocked)
+        assertTrue(':' !in defaultCode)
+        val decodedDefault = Scheduler.decodeFriend(defaultCode)!!
+        assertNull(decodedDefault.name)
+        assertEquals(blocked, decodedDefault.blocked)
+
+        // Custom friend name is preserved in code
+        val customCode = Scheduler.encodeFriend("Luca", blocked)
+        assertTrue(customCode.startsWith("Luca:"))
+        val decodedCustom = Scheduler.decodeFriend(customCode)!!
+        assertEquals("Luca", decodedCustom.name)
+        assertEquals(blocked, decodedCustom.blocked)
+
+        // Whitespace and colons in custom names
+        val colonNameCode = Scheduler.encodeFriend("A:B", setOf(3, 7))
+        val decodedColon = Scheduler.decodeFriend("  $colonNameCode  ")!!
+        assertEquals("A-B", decodedColon.name)
+        assertEquals(setOf(3, 7), decodedColon.blocked)
+
+        // Invalid friend codes
+        assertNull(Scheduler.decodeFriend(""))
+        assertNull(Scheduler.decodeFriend(":0"))
+        assertNull(Scheduler.decodeFriend("   :1"))
+        assertNull(Scheduler.decodeFriend("Luca:"))
+        assertNull(Scheduler.decodeFriend("Luca:invalid!"))
     }
 
     @Test
