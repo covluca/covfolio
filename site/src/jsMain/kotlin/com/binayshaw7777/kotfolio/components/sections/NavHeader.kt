@@ -58,6 +58,7 @@ private fun MenuItems() {
 //    NavLink("#photography", "Photography")
     NavLink("/#projects", "Projects")
     NavLink("/organizer", "Organizer")
+    NavLink("/ascii", "ASCII Art")
 }
 
 @Composable
