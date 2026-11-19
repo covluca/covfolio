@@ -4,10 +4,6 @@ import com.varabyte.kobweb.compose.ui.graphics.Color
 
 object Res {
     object Images {
-
-        const val ANIMA_CIRCLE = "images/Anima/anima_circle.svg"
-        const val ANIMA_ARC = "images/Anima/anima_arc.svg"
-        const val BACKGROUND_CIRCLES = "images/background_circles.svg"
         const val PORTAL_STAR = "images/portal_star.svg"
         const val NAVIGATION_ARROW = "images/Navigation_Arrow.svg"
         const val CUSTOM_CURSOR_DARK = "images/Custom_Cursor_Dark.svg"
@@ -75,7 +71,5 @@ object Res {
         val GLASS_BOX_BORDER_COLOR_LIGHT = Color.Companion.rgb(0xE9E9E9)
         val GLASS_BOX_BORDER_COLOR_DARK = Color.Companion.rgb(0x4E4E4E)
         val DARK_GRAY_TEXT_COLOR = Color.Companion.rgb(0x7B7B7B)
-        val FOUR_D_YELLOW = Color.Companion.rgb(0xFFD600)
-        val FOUR_D_PURPLE = Color.Companion.rgb(0x7B2CBF)
     }
 }
