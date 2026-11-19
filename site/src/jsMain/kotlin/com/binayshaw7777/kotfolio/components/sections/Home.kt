@@ -1,7 +1,6 @@
 package com.binayshaw7777.kotfolio.components.sections
 
 import androidx.compose.runtime.Composable
-import com.binayshaw7777.kotfolio.HeadlineTextStyle
 import com.binayshaw7777.kotfolio.SubheadlineTextStyle
 import com.binayshaw7777.kotfolio.components.styles.ButtonStyle
 import com.binayshaw7777.kotfolio.components.styles.HelloImStyle
@@ -15,26 +14,25 @@ import com.binayshaw7777.kotfolio.utils.Res
 import com.varabyte.kobweb.compose.css.FontWeight
 import com.varabyte.kobweb.compose.foundation.layout.Box
 import com.varabyte.kobweb.compose.foundation.layout.Column
+import com.varabyte.kobweb.compose.foundation.layout.Row
 import com.varabyte.kobweb.compose.ui.Alignment
 import com.varabyte.kobweb.compose.ui.Modifier
+import com.varabyte.kobweb.compose.ui.attrsModifier
+import com.varabyte.kobweb.compose.ui.graphics.Color
 import com.varabyte.kobweb.compose.ui.graphics.Colors
-import com.varabyte.kobweb.compose.ui.modifiers.animation
-import com.varabyte.kobweb.compose.ui.modifiers.color
-import com.varabyte.kobweb.compose.ui.modifiers.fontFamily
-import com.varabyte.kobweb.compose.ui.modifiers.fontWeight
-import com.varabyte.kobweb.compose.ui.modifiers.margin
-import com.varabyte.kobweb.compose.ui.modifiers.width
+import com.varabyte.kobweb.compose.ui.modifiers.*
 import com.varabyte.kobweb.compose.ui.toAttrs
 import com.varabyte.kobweb.core.rememberPageContext
 import com.varabyte.kobweb.silk.components.animation.toAnimation
 import com.varabyte.kobweb.silk.components.forms.Button
 import com.varabyte.kobweb.silk.components.forms.ButtonSize
-import com.varabyte.kobweb.silk.components.style.toAttrs
+import com.varabyte.kobweb.silk.components.forms.ButtonVars
 import com.varabyte.kobweb.silk.components.style.toModifier
 import com.varabyte.kobweb.silk.components.text.SpanText
 import com.varabyte.kobweb.silk.theme.colors.ColorMode
 import org.jetbrains.compose.web.css.AnimationTimingFunction
-import org.jetbrains.compose.web.css.percent
+import org.jetbrains.compose.web.css.FlexWrap
+import org.jetbrains.compose.web.css.cssRem
 import org.jetbrains.compose.web.css.px
 import org.jetbrains.compose.web.css.s
 import org.jetbrains.compose.web.dom.Div
@@ -92,18 +90,45 @@ fun Home() {
             }
 
             val ctx = rememberPageContext()
+            val isDark = ColorMode.current.isDark
+            val driftAccent = if (isDark) Color.rgb(0xF3DB5B) else Color.rgb(0x3C83EF)
+            val driftText = if (isDark) Colors.Black else Colors.White
 
-            Div(HeadlineTextStyle.toAttrs()) {
+            Row(
+                modifier = Modifier
+                    .margin(top = 56.px)
+                    .gap(1.25.cssRem)
+                    .flexWrap(FlexWrap.Wrap),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Button(
                     onClick = {
                         ctx.router.navigateTo(Constants.RESUME_URL)
                     },
                     colorScheme = CustomColorSchemes.BlackAndWhite,
-                    size = ButtonSize.MD,
-                    modifier = ButtonStyle.toModifier().width(150.percent).margin(top = 70.px)
+                    size = ButtonSize.LG,
+                    modifier = ButtonStyle.toModifier()
                 ) {
                     SpanText(
                         text = Constants.RESUME,
+                        modifier = Modifier.fontFamily(Res.Fonts.Tauri)
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        ctx.router.navigateTo("/drift")
+                    },
+                    size = ButtonSize.LG,
+                    modifier = ButtonStyle.toModifier()
+                        .setVariable(ButtonVars.BackgroundDefaultColor, driftAccent)
+                        .setVariable(ButtonVars.BackgroundHoverColor, driftAccent)
+                        .setVariable(ButtonVars.BackgroundPressedColor, driftAccent)
+                        .color(driftText)
+                        .attrsModifier { attr("data-testid", "play-jelly-drift-cta") }
+                ) {
+                    SpanText(
+                        text = "Play Jelly Drift 3D",
                         modifier = Modifier.fontFamily(Res.Fonts.Tauri)
                     )
                 }

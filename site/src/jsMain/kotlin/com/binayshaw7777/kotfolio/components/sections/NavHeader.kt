@@ -30,9 +30,14 @@ import com.varabyte.kobweb.silk.theme.colors.ColorMode
 import org.jetbrains.compose.web.css.*
 import com.binayshaw7777.kotfolio.components.widgets.IconButton
 import com.binayshaw7777.kotfolio.toSitePalette
+import com.binayshaw7777.kotfolio.utils.Res
+import com.varabyte.kobweb.compose.css.FontWeight
 import com.varabyte.kobweb.compose.css.functions.blur
 import com.varabyte.kobweb.compose.foundation.layout.Arrangement
+import com.varabyte.kobweb.compose.ui.attrsModifier
+import com.varabyte.kobweb.compose.ui.graphics.Color
 import com.varabyte.kobweb.compose.ui.styleModifier
+import com.varabyte.kobweb.core.rememberPageContext
 
 val NavHeaderStyle by ComponentStyle.base {
     Modifier
@@ -45,20 +50,52 @@ val NavHeaderStyle by ComponentStyle.base {
 }
 
 @Composable
-private fun NavLink(path: String, text: String) {
-    Link(path, text, variant = UndecoratedLinkVariant.then(UncoloredLinkVariant))
+private fun NavLink(path: String, text: String, onClick: () -> Unit = {}) {
+    Link(
+        path = path,
+        text = text,
+        modifier = Modifier
+            .styleModifier { property("white-space", "nowrap") }
+            .onClick { onClick() },
+        variant = UndecoratedLinkVariant.then(UncoloredLinkVariant)
+    )
 }
 
 @Composable
-private fun MenuItems() {
-    NavLink("/#home", "Home")
-    NavLink("/#about", "About")
-    NavLink("/#experience", "Experience")
+private fun DriftNavLink(onClick: () -> Unit = {}) {
+    val isDark = ColorMode.current.isDark
+    val currentPath = rememberPageContext().route.path
+    val isActive = currentPath == "/drift"
+    val accent = if (isDark) Color.rgb(0xF3DB5B) else Color.rgb(0x3C83EF)
+    Link(
+        path = "/drift",
+        text = "Jelly Drift",
+        modifier = Modifier
+            .fontFamily(Res.Fonts.Space_Grotesk)
+            .fontWeight(FontWeight.SemiBold)
+            .padding(topBottom = 0.25.cssRem, leftRight = 0.7.cssRem)
+            .borderRadius(999.px)
+            .border(1.px, LineStyle.Solid, accent)
+            .color(if (isActive) (if (isDark) Colors.Black else Colors.White) else accent)
+            .backgroundColor(if (isActive) accent else Colors.Transparent)
+            .styleModifier { property("white-space", "nowrap") }
+            .attrsModifier { attr("data-testid", "nav-jelly-drift") }
+            .onClick { onClick() },
+        variant = UndecoratedLinkVariant.then(UncoloredLinkVariant)
+    )
+}
+
+@Composable
+private fun MenuItems(onItemClick: () -> Unit = {}) {
+    NavLink("/#home", "Home", onItemClick)
+    NavLink("/#about", "About", onItemClick)
+    NavLink("/#experience", "Experience", onItemClick)
 //    NavLink("#skills_and_tools", "Skills & Tools")
 //    NavLink("#photography", "Photography")
-    NavLink("/#projects", "Projects")
-    NavLink("/organizer", "Organizer")
-    NavLink("/ascii", "ASCII Art")
+    NavLink("/#projects", "Projects", onItemClick)
+    NavLink("/organizer", "Organizer", onItemClick)
+    NavLink("/ascii", "ASCII Art", onItemClick)
+    DriftNavLink(onItemClick)
 }
 
 @Composable
@@ -159,7 +196,7 @@ private fun SideMenu(menuState: SideMenuState, close: () -> Unit, onAnimationEnd
             Column(
                 Modifier
                     .fillMaxHeight()
-                    .width(clamp(8.cssRem, 33.percent, 10.cssRem))
+                    .width(clamp(10.5.cssRem, 45.percent, 13.cssRem))
                     .align(Alignment.CenterEnd)
                     // Close button will appear roughly over the hamburger button, so the user can close
                     // things without moving their finger / cursor much.
@@ -181,7 +218,7 @@ private fun SideMenu(menuState: SideMenuState, close: () -> Unit, onAnimationEnd
             ) {
                 CloseButton(onClick = { close() })
                 Column(Modifier.padding(right = 0.75.cssRem).gap(1.5.cssRem).fontSize(1.4.cssRem), horizontalAlignment = Alignment.End) {
-                    MenuItems()
+                    MenuItems(onItemClick = close)
                 }
             }
         }

@@ -1,5 +1,8 @@
 import com.varabyte.kobweb.gradle.application.util.configAsKobwebApplication
 import kotlinx.html.link
+import kotlinx.html.meta
+import kotlinx.html.script
+import kotlinx.html.unsafe
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -25,6 +28,28 @@ kobweb {
                     href = "https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100;0,9..40,200;0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;0,9..40,900;0,9..40,1000;1,9..40,100;1,9..40,200;1,9..40,300;1,9..40,400;1,9..40,500;1,9..40,600;1,9..40,700;1,9..40,800;1,9..40,900;1,9..40,1000&family=Space+Grotesk:wght@300;400;500;600;700&family=Tauri&display=swap",
                     rel = "stylesheet"
                 )
+                meta(name = "google-adsense-account", content = "ca-pub-2255472474228401")
+                script {
+                    unsafe {
+                        +"""
+                        window.__adsenseBlocked = window.__adsenseBlocked === true ? true : false;
+                        window.__adsenseLoaded = window.__adsenseLoaded === true ? true : false;
+                        window.adsbygoogle = window.adsbygoogle || [];
+                        window.adBreak = window.adBreak || function(o) { window.adsbygoogle.push(o); };
+                        window.adConfig = window.adConfig || function(o) { window.adsbygoogle.push(o); };
+                        """.trimIndent()
+                    }
+                }
+                script(src = "/jellydrift/adsense.js") {}
+                script(
+                    src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2255472474228401"
+                ) {
+                    async = true
+                    attributes["crossorigin"] = "anonymous"
+                    attributes["data-ad-frequency-hint"] = "30s"
+                    attributes["onerror"] = "window.__adsenseBlocked = true;"
+                    attributes["onload"] = "window.__adsenseLoaded = true;"
+                }
             }
         }
     }
