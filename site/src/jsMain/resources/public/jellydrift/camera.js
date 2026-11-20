@@ -24,6 +24,7 @@ export function createCameraRig(THREE, aspect) {
   const tmp = new THREE.Vector3();
   const driverPosition = new THREE.Vector3();
   const driverLook = new THREE.Vector3();
+  let smoothPy = 0;
 
   let mode = "CHASE";
   let initialized = false;
@@ -93,28 +94,23 @@ export function createCameraRig(THREE, aspect) {
       const ofx = Math.sin(orbit);
       const ofz = Math.cos(orbit);
 
-      const dist = 8.8 + speedFactor * 3.0;
-      const height = py + 3.85 + bounceY * 1.2;
+      const dist = 8.8 + speedFactor * 0.8;
+      if (!initialized || dt <= 0) {
+        smoothPy = py;
+      } else {
+        smoothPy += (py - smoothPy) * (1 - Math.exp(-dt * 5.5));
+      }
+      const height = smoothPy + 3.85;
 
       desired.set(px - ofx * dist, height, pz - ofz * dist);
-      look.set(px + fx * 4.8, py + 1.25 + bounceY * 0.5, pz + fz * 4.8);
+      look.set(px + fx * 4.8, smoothPy + 1.25, pz + fz * 4.8);
 
       if (!initialized || dt <= 0) {
         camera.position.copy(desired);
         initialized = true;
       } else {
-        const k = 1 - Math.exp(-dt * 7.8);
-        camera.position.lerp(desired, k);
+        camera.position.copy(desired);
       }
-
-      const shake = clamp(speedFactor * 0.04, 0, 0.045);
-      const t = player.time || 0;
-      tmp.set(
-        Math.sin(t * 13.1) * shake,
-        Math.sin(t * 17.7) * shake * 0.5,
-        Math.cos(t * 11.3) * shake
-      );
-      camera.position.add(tmp);
 
       const targetFov = 64 + speedFactor * 6;
       if (Math.abs(camera.fov - targetFov) > 0.05) {
@@ -128,44 +124,35 @@ export function createCameraRig(THREE, aspect) {
     }
 
     if (mode === "DRIVER") {
-      if (playerMesh && playerMesh.driverEyeAnchor && playerMesh.driverLookTarget) {
-        playerMesh.driverEyeAnchor.getWorldPosition(desired);
+      const eyeAnchor =
+        playerMesh && (playerMesh.driverEyeRootAnchor || playerMesh.driverEyeAnchor);
+      if (eyeAnchor && playerMesh.driverLookTarget) {
+        eyeAnchor.getWorldPosition(desired);
         playerMesh.driverLookTarget.getWorldPosition(look);
       } else {
-        const bob = bounceY * 0.35;
-        desired.set(px - rx * 0.25 + fx * 0.08, py + 1.04 + bob, pz - rz * 0.25 + fz * 0.08);
-        look.set(px + fx * 12.0, py + 0.92 + bob, pz + fz * 12.0);
+        desired.set(px - rx * 0.25 + fx * 0.08, py + 1.04, pz - rz * 0.25 + fz * 0.08);
+        look.set(px + fx * 12.0, py + 0.92, pz + fz * 12.0);
       }
 
       // Lift and center the eye slightly above the modeled anchor so the dash,
       // steering wheel, and hood stay below the driving sightline.
       desired.x += fx * 0.10;
-      desired.y += 0.08 + bounceY * 0.18;
+      desired.y += 0.08;
       desired.z += fz * 0.10;
 
       // Let the view lead a small amount into a slide without turning the
       // camera into a distracting chase-orbit.
       const slip = clamp(player.slip || 0, -0.7, 0.7);
       look.x += rx * slip * 1.45 + fx * 1.2;
-      look.y += 0.10 + bounceY * 0.12;
+      look.y += 0.10;
       look.z += rz * slip * 1.45 + fz * 1.2;
-
-      const t = player.time || 0;
-      const bobStrength = speedFactor * 0.018;
-      tmp.set(
-        Math.sin(t * 11.7) * bobStrength,
-        Math.sin(t * 15.1) * bobStrength * 0.45,
-        Math.cos(t * 10.3) * bobStrength * 0.35
-      );
-      desired.add(tmp);
 
       if (!initialized || dt <= 0) {
         driverPosition.copy(desired);
         driverLook.copy(look);
       } else {
-        const positionK = 1 - Math.exp(-dt * 16);
         const lookK = 1 - Math.exp(-dt * 11);
-        driverPosition.lerp(desired, positionK);
+        driverPosition.copy(desired);
         driverLook.lerp(look, lookK);
       }
 
@@ -186,10 +173,9 @@ export function createCameraRig(THREE, aspect) {
     if (playerMesh && playerMesh.hoodAnchor) {
       playerMesh.hoodAnchor.getWorldPosition(desired);
     } else {
-      const bob = bounceY * 0.3;
-      desired.set(px + fx * 0.95, py + 1.18 + bob, pz + fz * 0.95);
+      desired.set(px + fx * 0.95, py + 1.18, pz + fz * 0.95);
     }
-    look.set(px + fx * 24.0, py + 1.1 + bounceY * 0.25, pz + fz * 24.0);
+    look.set(px + fx * 24.0, py + 1.1, pz + fz * 24.0);
     camera.position.copy(desired);
     initialized = true;
     if (Math.abs(camera.fov - 66) > 0.05) {

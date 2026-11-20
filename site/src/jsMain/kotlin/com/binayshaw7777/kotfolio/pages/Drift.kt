@@ -108,13 +108,17 @@ fun DriftPage() {
                     .top(0.px).left(0.px)
                     .width(300.px).height(94.px)
                     .borderRadius(8.px)
-                    .border(1.px, LineStyle.Solid, rgba(243, 219, 91, 0.35f))
+                    .border(1.px, LineStyle.Solid, rgba(126, 151, 170, 0.62f))
                     .overflow(Overflow.Hidden)
                     .pointerEvents(PointerEvents.None)
                     .styleModifier {
                         property("visibility", "hidden")
                         property("opacity", "0")
                         property("transform-origin", "0 0")
+                        property("background", "linear-gradient(145deg, rgba(10,16,22,.98), rgba(27,35,42,.98))")
+                        property("box-shadow", "inset 0 0 0 2px rgba(0,0,0,.62), inset 0 1px 0 rgba(213,236,255,.16), 0 5px 14px rgba(0,0,0,.34)")
+                        property("padding", "4px")
+                        property("box-sizing", "border-box")
                     }
                     .toAttrs {
                         ref { el ->
@@ -174,13 +178,17 @@ fun DriftPage() {
                     .top(0.px).left(0.px)
                     .width(220.px).height(69.px)
                     .borderRadius(8.px)
-                    .border(1.px, LineStyle.Solid, rgba(243, 219, 91, 0.35f))
+                    .border(1.px, LineStyle.Solid, rgba(116, 191, 201, 0.72f))
                     .overflow(Overflow.Hidden)
                     .pointerEvents(PointerEvents.None)
                     .styleModifier {
                         property("visibility", "hidden")
                         property("opacity", "0")
                         property("transform-origin", "0 0")
+                        property("background", "linear-gradient(180deg, rgba(12,23,29,.98), rgba(3,10,14,.98))")
+                        property("box-shadow", "inset 0 0 0 2px rgba(0,0,0,.7), inset 0 1px 0 rgba(180,255,255,.22), 0 4px 12px rgba(0,0,0,.38)")
+                        property("padding", "3px")
+                        property("box-sizing", "border-box")
                     }
                     .toAttrs {
                         ref { el ->

@@ -71,6 +71,10 @@ function sanitizeState(s, track) {
   if (!Number.isFinite(s.wallCooldown)) s.wallCooldown = 0;
   if (!Number.isFinite(s.collisionPulse)) s.collisionPulse = 0;
   if (!Number.isFinite(s.driftGraceTimer)) s.driftGraceTimer = 0;
+  if (typeof s.brakedFromForward !== "boolean") s.brakedFromForward = false;
+  if (!Number.isFinite(s.brakeStopHoldSec)) s.brakeStopHoldSec = 0;
+  if (!Number.isFinite(s.steerSmoothed)) s.steerSmoothed = 0;
+  if (!Number.isFinite(s.driftExitBlend)) s.driftExitBlend = 0;
   if (!Number.isFinite(s.surfacePitchDeg)) s.surfacePitchDeg = 0;
   if (!Number.isFinite(s.surfaceRollDeg)) s.surfaceRollDeg = 0;
   if (!s.surfaceNormal || typeof s.surfaceNormal !== "object") {
@@ -104,9 +108,13 @@ export function createCarPhysicsState(defOrId, track = null, spawnOpts = {}) {
     vLateral: 0,
     slip: 0,
     steerAngle: 0,
+    steerSmoothed: 0,
     drifting: false,
     wasHoldingDrift: false,
     driftGraceTimer: 0,
+    driftExitBlend: 0,
+    brakedFromForward: false,
+    brakeStopHoldSec: 0,
     boostCharge: 0,
     boostTier: 0,
     boostTime: 0,
@@ -174,9 +182,13 @@ export function resetCarPhysicsState(state, track = null, defOrId = null, spawnO
   state.vLateral = 0;
   state.slip = 0;
   state.steerAngle = 0;
+  state.steerSmoothed = 0;
   state.drifting = false;
   state.wasHoldingDrift = false;
   state.driftGraceTimer = 0;
+  state.driftExitBlend = 0;
+  state.brakedFromForward = false;
+  state.brakeStopHoldSec = 0;
   state.boostCharge = 0;
   state.boostTier = 0;
   state.boostTime = 0;
@@ -207,10 +219,10 @@ export function applyCollision(state, strength = 0.5, normalX = 0, normalZ = 0) 
   if (!state) return;
   const s = clamp(strength, 0.05, 1.5, 0.4);
   state.collisionPulse = Math.max(state.collisionPulse || 0, s);
-  state.springVel.squash += 1.6 * s;
-  state.springVel.pitchDeg += 14 * s;
-  state.springVel.rollDeg += (normalX * Math.cos(state.yaw) - normalZ * Math.sin(state.yaw)) * 26 * s;
-  state.springVel.bounceY += 1.1 * s;
+  state.springVel.squash += 0.95 * s;
+  state.springVel.pitchDeg += 8 * s;
+  state.springVel.rollDeg += (normalX * Math.cos(state.yaw) - normalZ * Math.sin(state.yaw)) * 15 * s;
+  state.springVel.bounceY += 0.55 * s;
 }
 
 /**
@@ -243,9 +255,9 @@ export function applyTrackBoundary(state, track, dt = FIXED_DT) {
     const impact = Math.max(0, slopeVelY - state.verticalVel);
     if (state.airborne && impact > 2.0) {
       const jelly = clamp(state.def?.jellyBounce ?? 1.0, 0.65, 1.5, 1.0);
-      state.springVel.bounceY -= clamp(impact * 0.16 * jelly, 0, 1.8, 0);
-      state.springVel.squash += clamp(impact * 0.12 * jelly, 0, 1.6, 0);
-      state.springVel.pitchDeg += clamp(impact * 2.2 * jelly, 0, 22, 0);
+      state.springVel.bounceY -= clamp(impact * 0.10 * jelly, 0, 1.0, 0);
+      state.springVel.squash += clamp(impact * 0.08 * jelly, 0, 0.9, 0);
+      state.springVel.pitchDeg += clamp(impact * 1.4 * jelly, 0, 14, 0);
     }
     state.pos.y = groundY;
     state.verticalVel = slopeVelY;
@@ -257,7 +269,7 @@ export function applyTrackBoundary(state, track, dt = FIXED_DT) {
 
   // Subtle terrain compression bounce on dips/crests
   if (!state.airborne && Number.isFinite(slopeAccelY)) {
-    state.springVel.bounceY += clamp(-slopeAccelY * 0.012, -1.2, 1.2, 0);
+    state.springVel.bounceY += clamp(-slopeAccelY * 0.0045, -0.45, 0.45, 0);
   }
 
   state.surfacePitchDeg = (-Math.asin(clamp(proj.tangent.y, -0.7, 0.7, 0)) * 180) / Math.PI;
@@ -283,15 +295,19 @@ export function applyTrackBoundary(state, track, dt = FIXED_DT) {
     const vT = state.vel.x * tx + state.vel.z * tz;
 
     if (vN > 0) {
-      const isHeavyImpact = vN > 1.8 && state.wallCooldown <= 0;
-      // Natural wall impulse: reflect the normal component with restitution and
-      // keep the incoming tangential speed (light damping). The car preserves its
-      // incoming heading and rotation: no tangent snapping, no yaw snapping.
-      const restitution = isHeavyImpact ? 0.45 : 0.22;
-      const vNNew = -Math.min(vN * restitution, 9.0) + (isHeavyImpact ? 0.08 : 0);
-      const vTNew = vT * (isHeavyImpact ? 0.97 : 0.99);
+      const isHeavyImpact = vN > 2.0 && state.wallCooldown <= 0;
+      const restitution = isHeavyImpact ? 0.28 : 0.12;
+      const vNNew = -Math.min(vN * restitution, 5.5);
+      const vTNew = vT * (isHeavyImpact ? 0.90 : 0.985);
       state.vel.x = vTNew * tx + vNNew * nx;
       state.vel.z = vTNew * tz + vNNew * nz;
+
+      // Gently deflect car nose along guardrail so scraping a touge corner glances smoothly instead of wedging
+      const trackAngle = Math.atan2(tx, tz);
+      const yawDiff = wrapAngleRad(trackAngle - state.yaw);
+      if (vT > -2.0 && Math.abs(yawDiff) > 0.08 && Math.abs(yawDiff) < 2.25) {
+        state.yaw = wrapAngleRad(state.yaw + yawDiff * (isHeavyImpact ? 0.52 : 0.20));
+      }
 
       const fx = Math.sin(state.yaw);
       const fz = Math.cos(state.yaw);
@@ -406,74 +422,88 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
     if (throttle) {
       const accelForce = (def.accel || 34) + boostAccelAdd;
       vForward += accelForce * h;
+      state.brakedFromForward = false;
+      state.brakeStopHoldSec = 0;
     } else if (state.boostTime > 0) {
       vForward += boostAccelAdd * 0.85 * h;
+      state.brakedFromForward = false;
+      state.brakeStopHoldSec = 0;
     }
 
     if (brake) {
-      if (vForward > 0.6) {
-        vForward -= (def.brake || 44) * h;
-        if (vForward < 0) vForward = 0;
+      if (vForward > 0.45) {
+        vForward = Math.max(0, vForward - (def.brake || 44) * h);
+        state.brakedFromForward = true;
+        state.brakeStopHoldSec = 0;
+      } else if (state.brakedFromForward && !(input && input.forceReverse)) {
+        // Hold cleanly at zero after braking from forward motion before engaging reverse
+        vForward = 0;
+        state.brakeStopHoldSec = (state.brakeStopHoldSec || 0) + h;
+        if (state.brakeStopHoldSec >= 0.45) {
+          state.brakedFromForward = false;
+        }
       } else {
-        vForward -= (def.accel || 34) * 0.68 * h;
+        vForward -= (def.accel || 34) * 0.56 * h;
       }
+    } else if (!throttle) {
+      state.brakedFromForward = false;
+      state.brakeStopHoldSec = 0;
     }
 
     if (!throttle && !brake && state.boostTime <= 0) {
-      const coastDrag = Math.exp(-1.15 * h);
-      vForward *= coastDrag;
-      if (Math.abs(vForward) < 0.08) vForward = 0;
+      // Realistic rolling resistance + quadratic aero drag so lift-off carries natural inertia
+      const sign = vForward >= 0 ? 1 : -1;
+      const absV = Math.abs(vForward);
+      const dragDecel = 0.82 + 0.0042 * absV * absV;
+      const nextAbs = Math.max(0, absV - dragDecel * h);
+      vForward = nextAbs < 0.06 ? 0 : sign * nextAbs;
     }
 
     vForward = clamp(vForward, maxRev, maxFwd, 0);
 
     // Slip & drift state
     const speedAbs = Math.abs(vForward);
+    state.steerSmoothed += (steer - (state.steerSmoothed || 0)) * (1 - Math.exp(-h * 18));
 
-    // Jelly Drift style: low-speed elastic drift. Drift engages as early as the
-    // speed allows — holding the drift input while steering into a turn (~6 m/s),
-    // or auto-discovering it once the car is already sliding (~8 m/s).
+    // Deliberate touge drift initiation: handbrake/drift key with steering/slip, or flick at speed
     const driftActive =
-      (wantDrift && vForward > 6.0 && Math.abs(steer) > 0.12) ||
-      (!brake && Math.abs(steer) > 0.78 && vForward > 8.0 && Math.abs(vRight) > 1.5);
+      (wantDrift && vForward > 5.0 && (Math.abs(steer) > 0.08 || Math.abs(vRight) > 2.0)) ||
+      (!brake && Math.abs(steer) > 0.88 && vForward > 23.0 && Math.abs(vRight) > 4.2);
 
-    // Elastic slide: keep the elastic drive running while lateral speed has been
-    // built up (drifting, or a slide that is still easing out after drift ends).
-    const elasticDrift = driftActive || Math.abs(vRight) > 1.2;
+    if (driftActive) {
+      state.driftExitBlend = 1.0;
+    } else {
+      state.driftExitBlend = Math.max(0, (state.driftExitBlend || 0) - 6.0 * h);
+    }
 
     const rawSlip = vForward > 1.2 ? Math.atan2(vRight, vForward) : 0;
     const driftGrip = clamp(def.driftGrip || 1.0, 0.75, 1.4, 1.0);
 
-    // Steering yaw authority + counter-steer stabilizer
-    const speedFactor = clamp(speedAbs / 20.0, 0, 1, 0);
+    // Agile touge steering yaw authority (tight hairpin turning radius without high-speed twitch)
+    const lowSpdRamp = clamp(speedAbs / 5.0, 0, 1, 0);
+    const hiSpdTaper = 1 - 0.18 * clamp((speedAbs - 18.0) / 15.0, 0, 1, 0);
     const dirSign = vForward >= -0.2 ? 1 : -1;
-    let yawRate = steer * (def.steerRate || 2.75) * (0.22 + 0.78 * speedFactor) * dirSign;
+    const steerBase = (def.steerRate || 2.3) * 1.16;
+    let yawRate = state.steerSmoothed * steerBase * lowSpdRamp * hiSpdTaper * dirSign;
 
     if (driftActive) {
-      yawRate *= speedAbs > 14.0 ? 1.04 : 0.85;
-      // Mild forward scrub during deep slide
-      vForward *= 1 - 0.05 * h;
+      // Crisper apex turn-in while drifting into tight touge hairpins
+      yawRate *= steer * rawSlip >= 0 ? 1.24 : 1.08;
+      // Subtle speed scrub proportional to slip angle
+      vForward *= 1 - (0.025 + 0.045 * clamp(Math.abs(rawSlip), 0, 1, 0)) * h;
     }
 
-    // Elastic lateral drive: instead of hard-damping the lateral speed, drive it
-    // toward a steering-proportional target so the slide builds gently and eases
-    // back out as steering is released — the Jelly Drift feel at low speed.
-    if (elasticDrift) {
-      const elasticTarget = vForward * clamp(steer, -1, 1, 0) * 0.85;
-      const elasticDamp = Math.min(5.0, Math.max(2.0, 3.0 * driftGrip));
-      vRight += h * elasticDamp * (elasticTarget - vRight);
-    }
+    // Planted lateral tire grip during normal driving; balanced progressive slip when drifting
+    const driftLatDamp = Math.abs(steer) > 0.08 ? 3.85 / driftGrip : 8.6;
+    let latDamping = 16.5 + (driftLatDamp - 16.5) * (state.driftExitBlend || 0);
 
-    // Counter-steer stabilizer: prevents spin-outs and caps |slip| <= MAX_SLIP_RAD (~58 deg)
-    let latDamping = elasticDrift ? 0.35 : 13.5;
-    if (Math.abs(rawSlip) > 0.78) {
-      const excess = clamp((Math.abs(rawSlip) - 0.78) / (MAX_SLIP_RAD - 0.78), 0, 1.5, 0);
+    if (Math.abs(rawSlip) > 0.74) {
+      const excess = clamp((Math.abs(rawSlip) - 0.74) / (MAX_SLIP_RAD - 0.74), 0, 1.5, 0);
       if (steer * rawSlip > 0) {
-        // Steering deeper into oversteer: attenuate inward yaw rate toward 0
-        yawRate *= Math.max(0, 1 - excess * 0.95);
+        // Softly limit deeper inward oversteer beyond ~42 deg
+        yawRate *= Math.max(0.12, 1 - excess * 0.82);
       }
-      latDamping += 9.0 * excess;
-      // Restoring alignment torque toward velocity direction
+      latDamping += 8.5 * excess;
       yawRate -= Math.sign(rawSlip) * excess * 1.65;
     }
 
@@ -534,7 +564,7 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
     }
   }
 
-  // 2nd-order damped harmonic 3-axis jelly spring
+  // 2nd-order damped harmonic 3-axis jelly spring (planted touge damping)
   if (dtClamped > 0) {
     const jelly = clamp(def.jellyBounce ?? 1.0, 0.65, 1.5, 1.0);
     const longAccel = clamp((state.speed - prevSpeed) / dtClamped, -60, 60, 0);
@@ -543,26 +573,26 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
     const latAccel = clamp(state.speed * yawRate, -65, 65, 0);
 
     // Signs: braking (longAccel < 0) -> pitchDeg > 0 (nose dive); accel -> pitchDeg < 0 (squat)
-    const pitchTarget = clamp(-longAccel * 0.24 * jelly, -12, 12, 0);
+    const pitchTarget = clamp(-longAccel * 0.14 * jelly, -6.5, 6.5, 0);
     // Signs: left turn (latAccel > 0) -> rollDeg < 0 (outward right lean via chassis.rotation.z = -deg2rad(rollDeg))
-    const rollTarget = clamp(-latAccel * 0.36 * jelly, -16, 16, 0);
+    const rollTarget = clamp(-latAccel * 0.16 * jelly, -9.5, 9.5, 0);
     // Symmetric >= 0 squash under cornering & impacts
     const squashTarget = clamp(
-      (Math.abs(latAccel) * 0.0022 + Math.max(0, state.collisionPulse) * 0.14) * jelly,
+      (Math.abs(latAccel) * 0.0014 + Math.max(0, state.collisionPulse) * 0.11) * jelly,
       0,
-      0.22,
+      0.14,
       0
     );
     const bounceTarget = 0;
 
     const omegaPitch = 13.5;
-    const zetaPitch = clamp(0.38 / Math.sqrt(jelly), 0.24, 0.65, 0.38);
+    const zetaPitch = clamp(0.66 / Math.sqrt(jelly), 0.52, 0.86, 0.66);
     const omegaRoll = 12.8;
-    const zetaRoll = clamp(0.35 / Math.sqrt(jelly), 0.22, 0.62, 0.35);
+    const zetaRoll = clamp(0.68 / Math.sqrt(jelly), 0.54, 0.86, 0.68);
     const omegaSquash = 15.5;
-    const zetaSquash = clamp(0.34 / Math.sqrt(jelly), 0.22, 0.6, 0.34);
+    const zetaSquash = clamp(0.66 / Math.sqrt(jelly), 0.52, 0.86, 0.66);
     const omegaBounce = 14.5;
-    const zetaBounce = clamp(0.36 / Math.sqrt(jelly), 0.22, 0.6, 0.36);
+    const zetaBounce = clamp(0.70 / Math.sqrt(jelly), 0.55, 0.88, 0.70);
 
     [state.spring.pitchDeg, state.springVel.pitchDeg] = stepSpringChannel(
       state.spring.pitchDeg,

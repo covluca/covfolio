@@ -16,6 +16,7 @@ export function createAdProjector(THREE, options) {
 
   const anchorWorld = new THREE.Vector3();
   const projected = new THREE.Vector3();
+  const tmpQuaternion = new THREE.Quaternion();
 
   const last = {
     console: { mounted: !!consoleHost, visible: false, rect: { left: 0, top: 0, width: 300, height: 94 } },
@@ -48,15 +49,112 @@ export function createAdProjector(THREE, options) {
     }
   }
 
-  function applyRect(el, rect) {
+  function solveHomography(w, h, points) {
+    const rows = [];
+    const values = [];
+    const source = [[0, 0], [w, 0], [0, h], [w, h]];
+    for (let i = 0; i < 4; i += 1) {
+      const sx = source[i][0];
+      const sy = source[i][1];
+      const dx = points[i].x;
+      const dy = points[i].y;
+      rows.push([sx, sy, 1, 0, 0, 0, -sx * dx, -sy * dx]);
+      values.push(dx);
+      rows.push([0, 0, 0, sx, sy, 1, -sx * dy, -sy * dy]);
+      values.push(dy);
+    }
+    for (let i = 0; i < 8; i += 1) {
+      let pivot = i;
+      for (let j = i + 1; j < 8; j += 1) {
+        if (Math.abs(rows[j][i]) > Math.abs(rows[pivot][i])) pivot = j;
+      }
+      if (Math.abs(rows[pivot][i]) < 1e-8) return null;
+      const row = rows[i];
+      rows[i] = rows[pivot];
+      rows[pivot] = row;
+      const value = values[i];
+      values[i] = values[pivot];
+      values[pivot] = value;
+      const scale = rows[i][i];
+      for (let k = i; k < 8; k += 1) rows[i][k] /= scale;
+      values[i] /= scale;
+      for (let j = 0; j < 8; j += 1) {
+        if (j === i) continue;
+        const factor = rows[j][i];
+        for (let k = i; k < 8; k += 1) rows[j][k] -= factor * rows[i][k];
+        values[j] -= factor * values[i];
+      }
+    }
+    return values;
+  }
+
+  function projectCorners(anchor, camera, width, height, rect) {
+    const corners = anchor && anchor.userData && anchor.userData.corners;
+    if (!corners) return null;
+    anchor.updateWorldMatrix(true, false);
+    const ordered = [corners.tl, corners.tr, corners.bl, corners.br];
+    if (ordered.some((corner) => !corner || typeof corner.getWorldPosition !== "function")) {
+      return null;
+    }
+    const points = [];
+    for (let i = 0; i < ordered.length; i += 1) {
+      ordered[i].getWorldPosition(anchorWorld);
+      projected.copy(anchorWorld).project(camera);
+      if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y)) return null;
+      points.push({
+        x: (projected.x * 0.5 + 0.5) * width,
+        y: (-projected.y * 0.5 + 0.5) * height,
+      });
+    }
+    const coefficients = solveHomography(rect.width, rect.height, points);
+    return coefficients ? { points, coefficients } : null;
+  }
+
+  function applyRect(el, rect, transform) {
     if (!el) return;
     el.style.left = "0px";
     el.style.top = "0px";
     el.style.width = rect.width + "px";
     el.style.height = rect.height + "px";
     el.style.transformOrigin = "0 0";
-    el.style.transform =
-      "translate3d(" + rect.left.toFixed(2) + "px," + rect.top.toFixed(2) + "px,0)";
+    el.style.transform = transform;
+  }
+
+  function applyProjectedRect(el, rect, anchor, camera, width, height) {
+    const mapped = projectCorners(anchor, camera, width, height, rect);
+    if (mapped) {
+      const h = mapped.coefficients;
+      applyRect(
+        el,
+        rect,
+        "matrix3d(" +
+          [h[0], h[1], 0, h[6], h[3], h[4], 0, h[7], 0, 0, 1, 0, h[2], h[5], 0, 1]
+            .map((value) => value.toFixed(6))
+            .join(",") +
+          ")"
+      );
+      return;
+    }
+    const euler = new THREE.Euler();
+    if (anchor) {
+      anchor.getWorldQuaternion(tmpQuaternion);
+      euler.setFromQuaternion(tmpQuaternion);
+    }
+    applyRect(
+      el,
+      rect,
+      "translate3d(" +
+        rect.left.toFixed(2) +
+        "px," +
+        rect.top.toFixed(2) +
+        "px,0) perspective(700px) rotateX(" +
+        ((euler.x * 180) / Math.PI).toFixed(2) +
+        "deg) rotateY(" +
+        ((euler.y * 180) / Math.PI).toFixed(2) +
+        "deg) rotateZ(" +
+        ((euler.z * 180) / Math.PI).toFixed(2) +
+        "deg)"
+    );
   }
 
   function resolveAnchor(getterOrObj) {
@@ -136,7 +234,7 @@ export function createAdProjector(THREE, options) {
       const rect = consoleRect(s.camera, width, height, s);
       last.console.visible = true;
       last.console.rect = rect;
-      applyRect(consoleHost, rect);
+      applyProjectedRect(consoleHost, rect, resolveAnchor(opts.consoleAnchor), s.camera, width, height);
       applyShown(consoleHost, "console");
     } else {
       last.console.visible = false;
@@ -148,7 +246,7 @@ export function createAdProjector(THREE, options) {
       const rect = roofRect(s.camera, width, height, s);
       last.roof.visible = true;
       last.roof.rect = rect;
-      applyRect(roofHost, rect);
+      applyProjectedRect(roofHost, rect, resolveAnchor(opts.roofAnchor), s.camera, width, height);
       applyShown(roofHost, "roof");
     } else {
       last.roof.visible = false;

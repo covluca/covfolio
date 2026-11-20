@@ -5,7 +5,7 @@ export function clamp(value, min, max, fallback = min) {
   return value < min ? min : value > max ? max : value;
 }
 
-const SAMPLE_COUNT = 480;
+const SAMPLE_COUNT = 640;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 function wrapAngleRad(a) {
@@ -162,6 +162,78 @@ function createStartCheckerTexture() {
   );
 }
 
+function createChevronTexture(bgHex, arrowHex) {
+  return makeCanvasTexture(
+    128,
+    128,
+    (ctx, w, h) => {
+      ctx.fillStyle = bgHex;
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = arrowHex;
+      ctx.lineWidth = 18;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(34, 24);
+      ctx.lineTo(90, h * 0.5);
+      ctx.lineTo(34, h - 24);
+      ctx.stroke();
+    },
+    1,
+    1
+  );
+}
+
+function createCityBuildingTexture(accentHex) {
+  return makeCanvasTexture(
+    128,
+    256,
+    (ctx, w, h) => {
+      ctx.fillStyle = "#0b1120";
+      ctx.fillRect(0, 0, w, h);
+      const cols = 6;
+      const rows = 14;
+      const cw = w / cols;
+      const ch = h / rows;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const seed = (r * 31 + c * 17) % 11;
+          if (seed < 4) continue;
+          ctx.fillStyle = seed === 9 ? accentHex : seed % 2 === 0 ? "#ffe58f" : "#7dd3fc";
+          ctx.fillRect(c * cw + 4, r * ch + 4, cw - 8, ch - 8);
+        }
+      }
+    },
+    1,
+    1
+  );
+}
+
+function createHighwaySignTexture(topText, subText, accentHex) {
+  return makeCanvasTexture(
+    512,
+    160,
+    (ctx, w, h) => {
+      ctx.fillStyle = "#0c4a2e";
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = "#f8fafc";
+      ctx.lineWidth = 8;
+      ctx.strokeRect(8, 8, w - 16, h - 16);
+      ctx.fillStyle = accentHex;
+      ctx.fillRect(22, 22, 16, h - 44);
+      ctx.fillStyle = "#f8fafc";
+      ctx.font = "800 40px sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.fillText(topText, 54, h * 0.38);
+      ctx.fillStyle = "#cbd5e1";
+      ctx.font = "700 24px sans-serif";
+      ctx.fillText(subText, 54, h * 0.72);
+    },
+    1,
+    1
+  );
+}
+
 const SPONSOR_PRESETS = [
   { title: "COVFOLIO", subtitle: "WEBGL ENGINEERING STUDIO", bg1: "#121826", bg2: "#1d2b44", accent: "#3C83EF" },
   { title: "JELLY TURBO", subtitle: "NITRO CHARGED BOUNCE TECH", bg1: "#2a121b", bg2: "#5e1726", accent: "#F3DB5B" },
@@ -175,19 +247,19 @@ const TRACK_SPECS = [
   {
     id: "sunny_coast",
     name: "Sunny Coast",
-    subtitle: "Coastal Highway & Palms",
-    halfWidth: 16.5,
+    subtitle: "Cliffside Switchback Touge",
+    halfWidth: 8.6,
     gateCount: 12,
-    maxBankRad: (5 * Math.PI) / 180,
+    maxBankRad: (5.5 * Math.PI) / 180,
     skyHex: "#79CBE8",
     fogColor: 0x8ad4ec,
-    fogNear: 280,
-    fogFar: 1400,
+    fogNear: 240,
+    fogFar: 1200,
     groundY: -0.6,
     waterY: -0.9,
     theme: {
-      roadHex: "#2d3442",
-      edgeStripeHex: "rgba(255, 255, 255, 0.72)",
+      roadHex: "#2a313e",
+      edgeStripeHex: "rgba(255, 255, 255, 0.76)",
       centerLineHex: "#F3DB5B",
       curbA: "#E63946",
       curbB: "#F8FAFC",
@@ -197,35 +269,40 @@ const TRACK_SPECS = [
       waterColor: 0x1fb6d4,
       accentColor: 0x3c83ef
     },
-    // Wide open coastal drift circuit with long connected corners (~1150m perimeter)
+    // Technical cliffside mountain-coastal touge (~873m perimeter, linked switchbacks & hairpins)
     controlPoints: [
-      [0, 0.5, -140],
-      [0, 0.55, -20],
-      [50, 1.4, 90],
-      [145, 3.6, 120],
-      [190, 6.2, 50],
-      [170, 4.8, -65],
-      [100, 2.5, -110],
-      [75, 3.1, -240],
-      [-35, 1.4, -230]
+      [0, 0.5, 0],
+      [0, 0.5, 28],
+      [-28, 1.2, 72],
+      [-94, 3.2, 86],
+      [-148, 6.4, 48],
+      [-150, 9.0, -14],
+      [-98, 10.8, -36],
+      [-74, 11.4, -82],
+      [-130, 10.2, -134],
+      [-168, 7.2, -172],
+      [-130, 4.4, -214],
+      [-64, 2.4, -184],
+      [4, 1.0, -112],
+      [0, 0.5, -34]
     ]
   },
   {
     id: "canyon_loop",
     name: "Canyon Loop",
-    subtitle: "Plateau Climb & Jump Crest",
-    halfWidth: 15.0,
+    subtitle: "Red-Rock Mountain Pass",
+    halfWidth: 8.2,
     gateCount: 14,
-    maxBankRad: (8 * Math.PI) / 180,
+    maxBankRad: (7.5 * Math.PI) / 180,
     skyHex: "#E8925C",
     fogColor: 0xe8925c,
-    fogNear: 260,
-    fogFar: 1350,
+    fogNear: 220,
+    fogFar: 1150,
     groundY: -0.6,
     waterY: null,
     theme: {
-      roadHex: "#352e33",
-      edgeStripeHex: "rgba(243, 219, 91, 0.72)",
+      roadHex: "#342d32",
+      edgeStripeHex: "rgba(243, 219, 91, 0.76)",
       centerLineHex: "#f4f1ea",
       curbA: "#d96b27",
       curbB: "#f5e9d6",
@@ -235,32 +312,36 @@ const TRACK_SPECS = [
       waterColor: null,
       accentColor: 0xf3db5b
     },
-    // Open canyon drift loop with long connected switchbacks (~1300m perimeter)
+    // Steep switchback canyon pass climb & corkscrew descent (~972m perimeter)
     controlPoints: [
-      [0, 0.6, -140],
-      [0, 0.8, -25],
-      [45, 3.6, 75],
-      [140, 8.8, 120],
-      [195, 13.8, 55],
-      [175, 11.4, -55],
-      [105, 7.0, -85],
-      [145, 10.4, -165],
-      [100, 12.6, -240],
-      [-30, 8.2, -250],
-      [-130, 3.4, -205]
+      [0, 0.8, 0],
+      [0, 1.0, 28],
+      [36, 3.4, 74],
+      [108, 7.2, 84],
+      [154, 11.2, 34],
+      [112, 14.4, -12],
+      [48, 16.8, -42],
+      [46, 19.2, -98],
+      [104, 20.0, -146],
+      [168, 16.4, -152],
+      [172, 12.4, -206],
+      [108, 8.8, -220],
+      [46, 5.2, -166],
+      [-12, 2.4, -112],
+      [0, 0.8, -36]
     ]
   },
   {
     id: "neon_circuit",
     name: "Neon Circuit",
-    subtitle: "Midnight Overpass & Chicanes",
-    halfWidth: 14.5,
-    gateCount: 16,
-    maxBankRad: (7 * Math.PI) / 180,
+    subtitle: "Midnight Expressway Touge",
+    halfWidth: 8.4,
+    gateCount: 14,
+    maxBankRad: (6.5 * Math.PI) / 180,
     skyHex: "#06080B",
     fogColor: 0x080b14,
-    fogNear: 240,
-    fogFar: 1250,
+    fogNear: 220,
+    fogFar: 1150,
     groundY: -0.5,
     waterY: null,
     theme: {
@@ -275,27 +356,29 @@ const TRACK_SPECS = [
       waterColor: null,
       accentColor: 0xf3db5b
     },
-    // Wide figure-8 overpass with broad drift areas and long connected corners (~1450m perimeter)
+    // Split-level midnight expressway touge with 9.4m overpass viaduct (~985m perimeter)
     controlPoints: [
-      [0, 0.3, -130],
-      [0, 0.3, -45],
-      [0, 0.3, 45],
-      [35, 0.4, 140],
-      [150, 3.2, 175],
-      [230, 7.6, 100],
-      [175, 9.6, 15],
-      [65, 9.6, 0],
-      [-65, 9.6, 0],
-      [-175, 8.4, -20],
-      [-215, 4.2, -125],
-      [-145, 0.8, -195]
+      [0, 0.4, 0],
+      [0, 0.4, 34],
+      [30, 0.6, 98],
+      [108, 2.6, 124],
+      [174, 6.4, 88],
+      [144, 9.8, 36],
+      [54, 9.8, 36],
+      [-54, 9.8, 36],
+      [-142, 9.2, 24],
+      [-178, 5.2, -38],
+      [-138, 1.4, -104],
+      [-58, 0.6, -102],
+      [-10, 0.4, -68],
+      [0, 0.4, -34]
     ]
   }
 ];
 
 function buildBakedTrack(spec) {
   const ctrlVectors = spec.controlPoints.map(([x, y, z]) => new THREE.Vector3(x, y, z));
-  const curve = new THREE.CatmullRomCurve3(ctrlVectors, true, "catmullrom", 0.5);
+  const curve = new THREE.CatmullRomCurve3(ctrlVectors, true, "centripetal");
   curve.arcLengthDivisions = 1600;
   const length = curve.getLength();
 
@@ -481,15 +564,16 @@ function buildBakedTrack(spec) {
 
   const start = at(0);
 
-  // Pre-compute trackside billboard descriptor positions avoiding crossings
+  // Pre-compute trackside billboard descriptor positions avoiding crossings & tunnels
   function isNearCrossing(sampleIdx, minClearance = 24) {
     const p = samples[sampleIdx];
+    const adjSkip = Math.round(SAMPLE_COUNT * 0.085);
     for (let j = 0; j < SAMPLE_COUNT; j++) {
       const dIdx = Math.min(
         Math.abs(j - sampleIdx),
         SAMPLE_COUNT - Math.abs(j - sampleIdx)
       );
-      if (dIdx < 40) continue;
+      if (dIdx < adjSkip) continue;
       const q = samples[j];
       const dXZ = Math.hypot(p.x - q.x, p.z - q.z);
       if (dXZ < minClearance) return true;
@@ -497,12 +581,17 @@ function buildBakedTrack(spec) {
     return false;
   }
 
+  function isInLandmarkZone(sampleIdx) {
+    const u = sampleIdx / SAMPLE_COUNT;
+    return u >= 0.70 && u <= 0.81;
+  }
+
   const billboards = [];
-  const bbFractions = [0.09, 0.27, 0.44, 0.63, 0.82];
+  const bbFractions = [0.09, 0.27, 0.43, 0.62, 0.86];
   for (let i = 0; i < bbFractions.length; i++) {
     let idx = Math.floor(bbFractions[i] * SAMPLE_COUNT) % SAMPLE_COUNT;
     let guard = 0;
-    while (isNearCrossing(idx, 26) && guard < 36) {
+    while ((isNearCrossing(idx, 24) || isInLandmarkZone(idx)) && guard < 40) {
       idx = (idx + 3) % SAMPLE_COUNT;
       guard++;
     }
@@ -574,7 +663,7 @@ export function projectToTrack(track, x, z, hintIdx = -1, yHint = null) {
 
   const useLocal = Number.isInteger(hintIdx) && hintIdx >= 0 && hintIdx < n;
   if (useLocal) {
-    const windowRadius = 28;
+    const windowRadius = Math.max(38, Math.round(n * 0.06));
     for (let k = -windowRadius; k <= windowRadius; k++) {
       const idx = (hintIdx + k + n) % n;
       const s = samples[idx];
@@ -692,17 +781,52 @@ export function projectToTrack(track, x, z, hintIdx = -1, yHint = null) {
   };
 }
 
+function smoothEdgeChain(pts, samples) {
+  const n = pts.length;
+  if (n < 6) return pts;
+  for (let pass = 0; pass < 3; pass++) {
+    const snapshot = pts.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+    for (let i = 0; i < n; i++) {
+      const prev = snapshot[(i - 1 + n) % n];
+      const cur = snapshot[i];
+      const next = snapshot[(i + 1) % n];
+      const s = samples[i];
+      const chordLen = Math.hypot(next.x - prev.x, next.z - prev.z);
+      const advNext = (next.x - cur.x) * s.tx + (next.z - cur.z) * s.tz;
+      const advPrev = (cur.x - prev.x) * s.tx + (cur.z - prev.z) * s.tz;
+      // Blend toward local midpoint only where sharp inner offset compresses or pinches
+      if (advNext < chordLen * 0.22 || advPrev < chordLen * 0.22) {
+        pts[i].x = cur.x * 0.4 + (prev.x + next.x) * 0.3;
+        pts[i].y = cur.y * 0.5 + (prev.y + next.y) * 0.25;
+        pts[i].z = cur.z * 0.4 + (prev.z + next.z) * 0.3;
+      }
+    }
+  }
+  return pts;
+}
+
 function buildRibbonGeometry(samples, leftFn, rightFn, uvScaleV = 0.125, flipWinding = false) {
   const n = samples.length;
+  const leftPts = new Array(n);
+  const rightPts = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const s = samples[i];
+    leftPts[i] = leftFn(s);
+    rightPts[i] = rightFn(s);
+  }
+  smoothEdgeChain(leftPts, samples);
+  smoothEdgeChain(rightPts, samples);
+
   const positions = new Float32Array((n + 1) * 2 * 3);
   const normals = new Float32Array((n + 1) * 2 * 3);
   const uvs = new Float32Array((n + 1) * 2 * 2);
   const indices = [];
 
   for (let i = 0; i <= n; i++) {
-    const s = samples[i % n];
-    const l = leftFn(s);
-    const r = rightFn(s);
+    const idx = i % n;
+    const s = samples[idx];
+    const l = leftPts[idx];
+    const r = rightPts[idx];
     const vIdx = i * 2;
 
     positions[vIdx * 3] = l.x;
@@ -778,8 +902,8 @@ export function buildTrackMeshes(track) {
     group.add(water);
   }
 
-  const groundSize = track.id === "sunny_coast" ? 640 : 3200;
-  const groundGeo = trackGeom(new THREE.PlaneGeometry(groundSize, groundSize));
+  const roadSize = track.id === "sunny_coast" ? 480 : 2800;
+  const groundGeo = trackGeom(new THREE.PlaneGeometry(roadSize, roadSize));
   groundGeo.rotateX(-Math.PI / 2);
   let groundTex = null;
   if (track.id === "neon_circuit") {
@@ -795,7 +919,8 @@ export function buildTrackMeshes(track) {
   );
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.position.y = track.groundY;
-  ground.position.z = -55;
+  ground.position.x = track.id === "sunny_coast" ? -70 : 0;
+  ground.position.z = track.id === "sunny_coast" ? -65 : -55;
   ground.name = "ground-plane";
   group.add(ground);
 
@@ -920,6 +1045,31 @@ export function buildTrackMeshes(track) {
     group.add(rail);
   }
 
+  // Guardrail structural posts for clear corner depth perception
+  const postStep = Math.max(8, Math.round(SAMPLE_COUNT / 48));
+  const railPostGeo = trackGeom(new THREE.BoxGeometry(0.22, 0.95, 0.22));
+  const railPostMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: track.id === "canyon_loop" ? 0x5c3a21 : track.id === "neon_circuit" ? 0x1e293b : 0x64748b,
+      roughness: 0.7,
+      metalness: 0.3
+    })
+  );
+  for (let i = 0; i < SAMPLE_COUNT; i += postStep) {
+    const s = samples[i];
+    for (const side of [1, -1]) {
+      const postDist = side * (s.halfWidth + 1.46);
+      const post = new THREE.Mesh(railPostGeo, railPostMat);
+      post.position.set(
+        s.x + s.bx * postDist,
+        s.y + s.by * postDist + 0.35,
+        s.z + s.bz * postDist
+      );
+      post.rotation.y = s.angle;
+      group.add(post);
+    }
+  }
+
   // 5. Bridge Deck Underside & Support Pillars (for elevated sections & overpass)
   const undersideMat = trackMat(
     new THREE.MeshStandardMaterial({
@@ -973,8 +1123,9 @@ export function buildTrackMeshes(track) {
   }
 
   // Support pillars under elevated bridge stretches (avoiding lower deck roadway)
-  const pillarGeo = trackGeom(new THREE.BoxGeometry(1.4, 1, 1.4));
-  for (let i = 0; i < SAMPLE_COUNT; i += 14) {
+  const pillarGeo = trackGeom(new THREE.BoxGeometry(1.3, 1, 1.3));
+  const pillarAdjSkip = Math.round(SAMPLE_COUNT * 0.085);
+  for (let i = 0; i < SAMPLE_COUNT; i += 18) {
     const s = samples[i];
     if (s.y < 2.6) continue;
     for (const side of [-1, 1]) {
@@ -984,7 +1135,7 @@ export function buildTrackMeshes(track) {
       let overlapsLowerRoad = false;
       for (let j = 0; j < SAMPLE_COUNT; j += 2) {
         const dIdx = Math.min(Math.abs(j - i), SAMPLE_COUNT - Math.abs(j - i));
-        if (dIdx < 40) continue;
+        if (dIdx < pillarAdjSkip) continue;
         const q = samples[j];
         if (q.y < s.y - 2.0 && Math.hypot(px - q.x, pz - q.z) < q.halfWidth + 2.4) {
           overlapsLowerRoad = true;
@@ -1053,7 +1204,7 @@ export function buildTrackMeshes(track) {
   const gantryAnchors = [];
   const gantrySamples = [
     { sampleIdx: 0, label: "START / FINISH", preset: SPONSOR_PRESETS[0] },
-    { sampleIdx: Math.floor(SAMPLE_COUNT * 0.52), label: "MID-SECTOR", preset: SPONSOR_PRESETS[3] }
+    { sampleIdx: Math.floor(SAMPLE_COUNT * 0.46), label: "MID-SECTOR", preset: SPONSOR_PRESETS[3] }
   ];
   // Ensure mid-sector gantry isn't on an overpass crossing
   let midIdx = gantrySamples[1].sampleIdx;
@@ -1194,8 +1345,8 @@ export function buildTrackMeshes(track) {
     });
   }
 
-  // 9. Rich Low-Poly Scenery Props per Theme (kept safely outside road clearance)
-  function isClearOfTrack(px, pz, margin = 15) {
+  // 9. Distinct Touge Landmarks, Corner Chevrons & Bespoke World Geometry
+  function isClearOfTrack(px, pz, margin = 14) {
     for (let j = 0; j < SAMPLE_COUNT; j += 3) {
       const s = samples[j];
       if (Math.hypot(px - s.x, pz - s.z) < s.halfWidth + margin) {
@@ -1205,16 +1356,84 @@ export function buildTrackMeshes(track) {
     return true;
   }
 
+  // Touge outer-corner reflective hairpin chevron boards (placed where curvature peaks)
+  const chevronColors =
+    track.id === "sunny_coast"
+      ? ["#111827", "#f3db5b"]
+      : track.id === "canyon_loop"
+      ? ["#f8fafc", "#e63946"]
+      : ["#0f172a", "#00e5ff"];
+  const chevronTex = trackTex(createChevronTexture(chevronColors[0], chevronColors[1]));
+  const chevronGeo = trackGeom(new THREE.PlaneGeometry(2.1, 2.1));
+  const chevronMat = trackMat(
+    new THREE.MeshBasicMaterial({ color: 0xffffff, map: chevronTex, side: THREE.DoubleSide })
+  );
+  const chevronPostGeo = trackGeom(new THREE.CylinderGeometry(0.08, 0.1, 2.4, 6));
+  const chevronPostMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 }));
+  for (let i = 16; i < SAMPLE_COUNT - 16; i += 9) {
+    const s = samples[i];
+    if (Math.abs(s.curvature) < 0.025) continue;
+    const outSide = s.curvature > 0 ? -1 : 1;
+    const dist = s.halfWidth + 2.05;
+    const cx = s.x + s.bx * outSide * dist;
+    const cz = s.z + s.bz * outSide * dist;
+    const post = new THREE.Mesh(chevronPostGeo, chevronPostMat);
+    post.position.set(cx, s.y + 1.2, cz);
+    group.add(post);
+
+    const sign = new THREE.Mesh(chevronGeo, chevronMat);
+    sign.position.set(cx, s.y + 2.45, cz);
+    // Face oncoming traffic along -tangent; mirror horizontally when turning left vs right
+    sign.rotation.y = s.angle + (outSide > 0 ? 0.28 : -0.28) + Math.PI;
+    if (s.curvature < 0) sign.scale.x = -1;
+    group.add(sign);
+  }
+
   if (track.id === "sunny_coast") {
     const trunkMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.9 }));
     const leafMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x2ec46d, roughness: 0.75 }));
+    const rockMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x7c7165, roughness: 0.92 }));
+    const cliffConcreteMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xd6cfc2, roughness: 0.8 }));
+    const woodMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x9b6b43, roughness: 0.88 }));
+
+    // A) Coastal Rock-Cut Cliff Gallery / Arch Tunnel (samples 462..498)
+    const galStart = Math.floor(SAMPLE_COUNT * 0.72);
+    const galEnd = Math.floor(SAMPLE_COUNT * 0.78);
+    const cliffWallGeo = trackGeom(new THREE.BoxGeometry(2.4, 7.2, 4.2));
+    const galleryRoofGeo = trackGeom(new THREE.BoxGeometry(track.halfWidth * 2 + 6.4, 1.3, 4.4));
+    const seaColGeo = trackGeom(new THREE.BoxGeometry(1.1, 6.4, 1.1));
+    for (let i = galStart; i <= galEnd; i += 2) {
+      const s = samples[i % SAMPLE_COUNT];
+      const bayCenter = new THREE.Group();
+      bayCenter.position.set(s.x, s.y, s.z);
+      bayCenter.rotation.y = s.angle;
+
+      // Solid carved rock cliff face on outer side (+binormal left / cliff side)
+      const rockWall = new THREE.Mesh(cliffWallGeo, rockMat);
+      rockWall.position.set(s.halfWidth + 2.6, 3.4, 0);
+      bayCenter.add(rockWall);
+
+      // Open seaside gallery concrete arch columns on ocean side
+      if ((i - galStart) % 4 === 0) {
+        const col = new THREE.Mesh(seaColGeo, cliffConcreteMat);
+        col.position.set(-(s.halfWidth + 2.1), 3.1, 0);
+        bayCenter.add(col);
+      }
+
+      const roof = new THREE.Mesh(galleryRoofGeo, rockMat);
+      roof.position.set(0.3, 6.8, 0);
+      bayCenter.add(roof);
+      group.add(bayCenter);
+    }
+
+    // B) Layered Coastal Palms & Retaining Cliff Rocks
     const trunkGeo = trackGeom(new THREE.CylinderGeometry(0.28, 0.45, 7.2, 7));
     const crownGeo = trackGeom(new THREE.ConeGeometry(3.2, 2.2, 7));
-
-    for (let i = 0; i < SAMPLE_COUNT; i += 13) {
+    for (let i = 0; i < SAMPLE_COUNT; i += 14) {
+      if (i >= galStart - 4 && i <= galEnd + 4) continue;
       const s = samples[i];
       const side = i % 2 === 0 ? 1 : -1;
-      const dist = s.halfWidth + 9 + (i % 5) * 2.5;
+      const dist = s.halfWidth + 8.5 + (i % 5) * 2.2;
       const px = s.x + s.bx * side * dist;
       const pz = s.z + s.bz * side * dist;
       if (!isClearOfTrack(px, pz, 5.5)) continue;
@@ -1238,96 +1457,312 @@ export function buildTrackMeshes(track) {
       group.add(palm);
     }
 
-    // Coastal Lighthouse
-    const lhPos = { x: 245, z: -15 };
-    if (isClearOfTrack(lhPos.x, lhPos.z, 10)) {
+    // C) Coastal Lighthouse + Harbor Pier & Sailboats out in the bay
+    const lhPos = { x: 46, z: -26 };
+    if (isClearOfTrack(lhPos.x, lhPos.z, 12)) {
       const lh = new THREE.Group();
       lh.position.set(lhPos.x, track.groundY, lhPos.z);
-      const towerGeo = trackGeom(new THREE.CylinderGeometry(2.4, 4.2, 26, 10));
-      const towerMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.7 }));
-      const tower = new THREE.Mesh(towerGeo, towerMat);
-      tower.position.y = 13;
+      const tower = new THREE.Mesh(trackGeom(new THREE.CylinderGeometry(2.3, 4.0, 24, 10)), trackMat(new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.7 })));
+      tower.position.y = 12;
       lh.add(tower);
-
-      const bandGeo = trackGeom(new THREE.CylinderGeometry(2.9, 3.4, 6, 10));
-      const bandMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xe63946, roughness: 0.7 }));
-      const band = new THREE.Mesh(bandGeo, bandMat);
-      band.position.y = 14;
+      const band = new THREE.Mesh(trackGeom(new THREE.CylinderGeometry(2.8, 3.3, 5.5, 10)), trackMat(new THREE.MeshStandardMaterial({ color: 0xe63946, roughness: 0.7 })));
+      band.position.y = 13;
       lh.add(band);
-
-      const capGeo = trackGeom(new THREE.SphereGeometry(2.3, 10, 8));
-      const capMat = trackMat(new THREE.MeshBasicMaterial({ color: 0xf3db5b }));
-      const cap = new THREE.Mesh(capGeo, capMat);
-      cap.position.y = 26.5;
-      lh.add(cap);
+      const beacon = new THREE.Mesh(trackGeom(new THREE.SphereGeometry(2.2, 10, 8)), trackMat(new THREE.MeshBasicMaterial({ color: 0xf3db5b })));
+      beacon.position.y = 24.8;
+      lh.add(beacon);
       group.add(lh);
     }
-  } else if (track.id === "canyon_loop") {
-    const mesaMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xa64d2e, roughness: 0.92 }));
-    const mesaTopMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xd9804c, roughness: 0.9 }));
-    const cactusMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x3b8c52, roughness: 0.8 }));
-    const mesaGeo = trackGeom(new THREE.CylinderGeometry(12, 18, 22, 7));
-    const cactusGeo = trackGeom(new THREE.CylinderGeometry(0.42, 0.48, 5.2, 7));
 
+    const pierBase = { x: 44, z: -225 };
+    if (isClearOfTrack(pierBase.x, pierBase.z, 18)) {
+      const pier = new THREE.Group();
+      pier.position.set(pierBase.x, track.waterY + 0.75, pierBase.z);
+      pier.rotation.y = 0.4;
+      const deck = new THREE.Mesh(trackGeom(new THREE.BoxGeometry(6.5, 0.45, 34)), woodMat);
+      pier.add(deck);
+      const pilingGeo = trackGeom(new THREE.CylinderGeometry(0.28, 0.3, 3.2, 6));
+      for (const pz of [-13, -4, 5, 14]) {
+        for (const px of [-2.8, 2.8]) {
+          const piling = new THREE.Mesh(pilingGeo, woodMat);
+          piling.position.set(px, -0.6, pz);
+          pier.add(piling);
+        }
+      }
+      group.add(pier);
+    }
+
+    const boatCoords = [
+      [58, -145, 0.5, 0xe63946],
+      [-215, -135, -0.8, 0x3c83ef],
+      [-215, -15, 1.1, 0xf3db5b]
+    ];
+    const hullGeo = trackGeom(new THREE.BoxGeometry(3.2, 1.1, 7.6));
+    const mastGeo = trackGeom(new THREE.CylinderGeometry(0.12, 0.14, 7.5, 6));
+    const sailGeo = trackGeom(new THREE.ConeGeometry(2.4, 6.4, 3));
+    const hullWhiteMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 }));
+    for (const [bx, bz, rot, accentHex] of boatCoords) {
+      if (!isClearOfTrack(bx, bz, 16)) continue;
+      const boat = new THREE.Group();
+      boat.position.set(bx, track.waterY + 0.35, bz);
+      boat.rotation.y = rot;
+      boat.add(new THREE.Mesh(hullGeo, hullWhiteMat));
+      const mast = new THREE.Mesh(mastGeo, woodMat);
+      mast.position.y = 3.8;
+      boat.add(mast);
+      const sail = new THREE.Mesh(sailGeo, trackMat(new THREE.MeshStandardMaterial({ color: accentHex, roughness: 0.6 })));
+      sail.position.set(0, 4.4, 0.3);
+      sail.scale.set(0.18, 1.0, 1.0);
+      boat.add(sail);
+      group.add(boat);
+    }
+  } else if (track.id === "canyon_loop") {
+    const mesaDarkMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x9b4528, roughness: 0.92 }));
+    const mesaMidMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xc46037, roughness: 0.9 }));
+    const mesaTopMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xe38b52, roughness: 0.88 }));
+    const cactusMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x3b8c52, roughness: 0.8 }));
+    const timberMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x7c4d2b, roughness: 0.88 }));
+
+    // A) Sculpted Red-Rock Natural Sandstone Arch spanning completely over the canyon road
+    const archIdx = Math.floor(SAMPLE_COUNT * 0.74);
+    const as = samples[archIdx];
+    const archGroup = new THREE.Group();
+    archGroup.position.set(as.x, as.y, as.z);
+    archGroup.rotation.y = as.angle;
+    const span = as.halfWidth + 3.4;
+    const pierGeo = trackGeom(new THREE.BoxGeometry(5.2, 11.5, 6.2));
+    for (const side of [-1, 1]) {
+      const pier = new THREE.Mesh(pierGeo, mesaDarkMat);
+      pier.position.set(side * (span + 1.8), 4.8, 0);
+      pier.rotation.z = -side * 0.12;
+      archGroup.add(pier);
+    }
+    const lintel1 = new THREE.Mesh(trackGeom(new THREE.BoxGeometry(span * 2 + 6.8, 3.2, 5.4)), mesaMidMat);
+    lintel1.position.set(0, 9.8, 0);
+    archGroup.add(lintel1);
+    const lintel2 = new THREE.Mesh(trackGeom(new THREE.BoxGeometry(span * 2 + 2.4, 2.6, 4.6)), mesaTopMat);
+    lintel2.position.set(0, 12.2, 0);
+    archGroup.add(lintel2);
+    group.add(archGroup);
+
+    // B) Stepped Multi-Tier Red-Rock Canyon Mesas
+    const tierGeo = trackGeom(new THREE.CylinderGeometry(11, 15, 9, 7));
     const mesaCoords = [
-      [270, 90, 1.4],
-      [-210, 40, 1.8],
-      [-185, -270, 1.5],
-      [230, -230, 1.3],
-      [45, -130, 0.85]
+      [225, 45, 1.4],
+      [-52, 20, 1.3],
+      [215, -170, 1.5],
+      [98, -104, 0.85],
+      [-54, -185, 1.6]
     ];
     for (let m = 0; m < mesaCoords.length; m++) {
       const [mx, mz, sc] = mesaCoords[m];
       if (!isClearOfTrack(mx, mz, 16 * sc)) continue;
-      const mesa = new THREE.Mesh(mesaGeo, m % 2 === 0 ? mesaMat : mesaTopMat);
-      mesa.scale.set(sc, 0.9 + (m % 3) * 0.35, sc);
-      mesa.position.set(mx, track.groundY + 10 * sc, mz);
+      const mesa = new THREE.Group();
+      mesa.position.set(mx, track.groundY, mz);
+      const t1 = new THREE.Mesh(tierGeo, mesaDarkMat);
+      t1.scale.set(sc * 1.15, 1.1, sc * 1.15);
+      t1.position.y = 4.5;
+      mesa.add(t1);
+      const t2 = new THREE.Mesh(tierGeo, mesaMidMat);
+      t2.scale.set(sc * 0.86, 1.0, sc * 0.86);
+      t2.position.y = 12.5;
+      mesa.add(t2);
+      const t3 = new THREE.Mesh(tierGeo, mesaTopMat);
+      t3.scale.set(sc * 0.62, 0.85, sc * 0.62);
+      t3.position.y = 19.2;
+      mesa.add(t3);
       group.add(mesa);
     }
 
-    for (let i = 0; i < SAMPLE_COUNT; i += 17) {
+    // C) Wooden Canyon Lookout Watchtower near high pass overlook
+    const towerSample = samples[Math.floor(SAMPLE_COUNT * 0.45)];
+    const wtX = towerSample.x - towerSample.bx * (towerSample.halfWidth + 9.5);
+    const wtZ = towerSample.z - towerSample.bz * (towerSample.halfWidth + 9.5);
+    if (isClearOfTrack(wtX, wtZ, 4.5)) {
+      const wt = new THREE.Group();
+      wt.position.set(wtX, towerSample.y - 1.0, wtZ);
+      const legGeo = trackGeom(new THREE.BoxGeometry(0.45, 9.5, 0.45));
+      for (const lx of [-1.8, 1.8]) {
+        for (const lz of [-1.8, 1.8]) {
+          const leg = new THREE.Mesh(legGeo, timberMat);
+          leg.position.set(lx, 4.7, lz);
+          wt.add(leg);
+        }
+      }
+      const cabin = new THREE.Mesh(trackGeom(new THREE.BoxGeometry(4.4, 2.8, 4.4)), mesaTopMat);
+      cabin.position.y = 10.6;
+      wt.add(cabin);
+      const roof = new THREE.Mesh(trackGeom(new THREE.ConeGeometry(3.8, 2.2, 4)), timberMat);
+      roof.position.y = 13.0;
+      roof.rotation.y = Math.PI * 0.25;
+      wt.add(roof);
+      group.add(wt);
+    }
+
+    // D) Branched Saguaro Cacti & Canyon Sandstone Boulders
+    const cactusStemGeo = trackGeom(new THREE.CylinderGeometry(0.38, 0.44, 5.2, 7));
+    const cactusArmGeo = trackGeom(new THREE.CylinderGeometry(0.24, 0.28, 2.0, 6));
+    const boulderGeo = trackGeom(new THREE.DodecahedronGeometry(2.2, 0));
+    for (let i = 0; i < SAMPLE_COUNT; i += 18) {
       const s = samples[i];
       const side = i % 2 === 0 ? 1 : -1;
-      const dist = s.halfWidth + 11 + (i % 4) * 3;
+      const dist = s.halfWidth + 8.5 + (i % 4) * 2.5;
       const px = s.x + s.bx * side * dist;
       const pz = s.z + s.bz * side * dist;
-      if (!isClearOfTrack(px, pz, 5.5)) continue;
+      if (!isClearOfTrack(px, pz, 5.0)) continue;
 
-      const cactus = new THREE.Mesh(cactusGeo, cactusMat);
-      cactus.position.set(px, track.groundY + 2.6, pz);
-      group.add(cactus);
+      if (i % 36 === 0) {
+        const rock = new THREE.Mesh(boulderGeo, mesaMidMat);
+        rock.scale.set(1.2, 0.75, 1.0);
+        rock.position.set(px, track.groundY + 1.0, pz);
+        rock.rotation.set(0.3 * i, 0.5 * i, 0.2);
+        group.add(rock);
+      } else {
+        const cactus = new THREE.Group();
+        cactus.position.set(px, track.groundY, pz);
+        cactus.rotation.y = i * 0.7;
+        const stem = new THREE.Mesh(cactusStemGeo, cactusMat);
+        stem.position.y = 2.6;
+        cactus.add(stem);
+        const armL = new THREE.Mesh(cactusArmGeo, cactusMat);
+        armL.position.set(0.65, 3.0, 0);
+        armL.rotation.z = -0.5;
+        cactus.add(armL);
+        const armR = new THREE.Mesh(cactusArmGeo, cactusMat);
+        armR.position.set(-0.62, 2.5, 0);
+        armR.rotation.z = 0.55;
+        cactus.add(armR);
+        group.add(cactus);
+      }
     }
   } else {
-    // neon_circuit cyber pylons & towers
-    const pylonBodyGeo = trackGeom(new THREE.BoxGeometry(1.4, 9.5, 1.4));
-    const pylonStripGeo = trackGeom(new THREE.BoxGeometry(1.5, 8.8, 0.35));
-    const pylonMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x101829, metalness: 0.6, roughness: 0.35 }));
-    const neonColors = [0x3c83ef, 0xff2e93, 0xf3db5b, 0x00e5ff];
-    const neonMats = neonColors.map((col) =>
-      trackMat(new THREE.MeshBasicMaterial({ color: col }))
-    );
+    // neon_circuit: Illuminated Expressway Tunnel, City Skyline & Highway Destination Gantries
+    const concreteMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x162033, metalness: 0.55, roughness: 0.45 }));
+    const stripCyanMat = trackMat(new THREE.MeshBasicMaterial({ color: 0x00e5ff }));
+    const stripPinkMat = trackMat(new THREE.MeshBasicMaterial({ color: 0xff2e93 }));
+    const stripAmberMat = trackMat(new THREE.MeshBasicMaterial({ color: 0xf3db5b }));
 
-    for (let i = 0; i < SAMPLE_COUNT; i += 15) {
+    // A) Illuminated Expressway Tunnel (samples 464..502)
+    const tunStart = Math.floor(SAMPLE_COUNT * 0.725);
+    const tunEnd = Math.floor(SAMPLE_COUNT * 0.785);
+    const tunWallGeo = trackGeom(new THREE.BoxGeometry(0.95, 6.4, 3.8));
+    const tunRoofGeo = trackGeom(new THREE.BoxGeometry(track.halfWidth * 2 + 5.6, 0.85, 3.9));
+    const tunStripGeo = trackGeom(new THREE.BoxGeometry(1.1, 0.22, 3.5));
+    for (let i = tunStart; i <= tunEnd; i += 2) {
+      const s = samples[i % SAMPLE_COUNT];
+      const seg = new THREE.Group();
+      seg.position.set(s.x, s.y, s.z);
+      seg.rotation.y = s.angle;
+      for (const side of [-1, 1]) {
+        const wall = new THREE.Mesh(tunWallGeo, concreteMat);
+        wall.position.set(side * (s.halfWidth + 2.2), 3.1, 0);
+        seg.add(wall);
+      }
+      const roof = new THREE.Mesh(tunRoofGeo, concreteMat);
+      roof.position.set(0, 6.2, 0);
+      seg.add(roof);
+      const light = new THREE.Mesh(tunStripGeo, i % 4 === 0 ? stripCyanMat : stripAmberMat);
+      light.position.set(0, 5.7, 0);
+      seg.add(light);
+      group.add(seg);
+    }
+
+    // B) Green Expressway Overhead Destination Route Signs (independent of sponsor gantryAnchors)
+    const hwyPostGeo = trackGeom(new THREE.CylinderGeometry(0.28, 0.34, 7.6, 8));
+    const hwyBeamGeo = trackGeom(new THREE.BoxGeometry(track.halfWidth * 2 + 4.4, 0.45, 0.45));
+    const hwySignSpec = [
+      { idx: Math.floor(SAMPLE_COUNT * 0.21), top: "BAYSHORE VIADUCT ->", sub: "C1 EXPRESSWAY TOUGE", accent: "#00e5ff" },
+      { idx: Math.floor(SAMPLE_COUNT * 0.62), top: "SHIBUYA TUNNEL 200m", sub: "NIGHT DRIFT SECTOR", accent: "#f3db5b" }
+    ];
+    for (const hs of hwySignSpec) {
+      const s = samples[hs.idx % SAMPLE_COUNT];
+      const g = new THREE.Group();
+      g.position.set(s.x, s.y, s.z);
+      g.rotation.y = s.angle;
+      for (const side of [-1, 1]) {
+        const post = new THREE.Mesh(hwyPostGeo, concreteMat);
+        post.position.set(side * (s.halfWidth + 1.85), 3.8, 0);
+        g.add(post);
+      }
+      const beam = new THREE.Mesh(hwyBeamGeo, concreteMat);
+      beam.position.set(0, 7.2, 0);
+      g.add(beam);
+      const signTex = trackTex(createHighwaySignTexture(hs.top, hs.sub, hs.accent));
+      const signFace = new THREE.Mesh(
+        trackGeom(new THREE.PlaneGeometry(s.halfWidth * 1.45, 2.1)),
+        trackMat(new THREE.MeshBasicMaterial({ color: 0xffffff, map: signTex, side: THREE.DoubleSide }))
+      );
+      signFace.position.set(0, 6.25, 0);
+      signFace.rotation.y = Math.PI;
+      g.add(signFace);
+      group.add(g);
+    }
+
+    // C) Procedural Lit-Window City Skyline Towers
+    const bldTexBlue = trackTex(createCityBuildingTexture("#38bdf8"));
+    const bldTexPink = trackTex(createCityBuildingTexture("#f472b6"));
+    const bldMatBlue = trackMat(new THREE.MeshStandardMaterial({ map: bldTexBlue, emissive: 0x0f172a, roughness: 0.5 }));
+    const bldMatPink = trackMat(new THREE.MeshStandardMaterial({ map: bldTexPink, emissive: 0x1a0b24, roughness: 0.5 }));
+    const neonTrimMats = [stripCyanMat, stripPinkMat, stripAmberMat];
+    const skylinePositions = [
+      [-65, -42, 16, 46, 16],
+      [-92, -32, 14, 62, 14],
+      [62, -48, 18, 52, 16],
+      [96, -24, 15, 68, 15],
+      [78, 165, 20, 58, 18],
+      [-88, 95, 18, 54, 18],
+      [-218, 55, 22, 74, 22],
+      [-215, -108, 20, 64, 20],
+      [216, 118, 22, 70, 22],
+      [208, -28, 18, 50, 18],
+      [-45, -162, 22, 60, 18],
+      [48, -168, 20, 55, 18]
+    ];
+    for (let b = 0; b < skylinePositions.length; b++) {
+      const [bx, bz, bw, bh, bd] = skylinePositions[b];
+      if (!isClearOfTrack(bx, bz, Math.max(bw, bd) * 0.72 + 4)) continue;
+      const tower = new THREE.Group();
+      tower.position.set(bx, track.groundY, bz);
+      const body = new THREE.Mesh(
+        trackGeom(new THREE.BoxGeometry(bw, bh, bd)),
+        b % 2 === 0 ? bldMatBlue : bldMatPink
+      );
+      body.position.y = bh * 0.5;
+      tower.add(body);
+      const cap = new THREE.Mesh(
+        trackGeom(new THREE.BoxGeometry(bw + 0.5, 0.85, bd + 0.5)),
+        neonTrimMats[b % neonTrimMats.length]
+      );
+      cap.position.y = bh + 0.3;
+      tower.add(cap);
+      group.add(tower);
+    }
+
+    // D) Curved Expressway Streetlamps along curbs
+    const lampMastGeo = trackGeom(new THREE.CylinderGeometry(0.11, 0.14, 6.2, 6));
+    const lampArmGeo = trackGeom(new THREE.BoxGeometry(2.2, 0.14, 0.14));
+    const lampBulbGeo = trackGeom(new THREE.BoxGeometry(0.95, 0.16, 0.45));
+    for (let i = 6; i < SAMPLE_COUNT; i += 24) {
+      if (i >= tunStart - 3 && i <= tunEnd + 3) continue;
       const s = samples[i];
-      const side = i % 2 === 0 ? 1 : -1;
-      const dist = s.halfWidth + 6.5 + (i % 3) * 3.0;
-      const px = s.x + s.bx * side * dist;
-      const pz = s.z + s.bz * side * dist;
-      if (!isClearOfTrack(px, pz, 4.5)) continue;
-
-      const hScale = 1.0 + (i % 4) * 0.45;
-      const pylon = new THREE.Group();
-      pylon.position.set(px, track.groundY + (9.5 * hScale) * 0.5, pz);
-      pylon.rotation.y = s.angle;
-
-      const body = new THREE.Mesh(pylonBodyGeo, pylonMat);
-      body.scale.y = hScale;
-      pylon.add(body);
-
-      const strip = new THREE.Mesh(pylonStripGeo, neonMats[i % neonMats.length]);
-      strip.scale.y = hScale;
-      pylon.add(strip);
-      group.add(pylon);
+      const side = i % 48 === 6 ? 1 : -1;
+      const lamp = new THREE.Group();
+      lamp.position.set(
+        s.x + s.bx * side * (s.halfWidth + 1.55),
+        s.y,
+        s.z + s.bz * side * (s.halfWidth + 1.55)
+      );
+      lamp.rotation.y = s.angle;
+      const mast = new THREE.Mesh(lampMastGeo, concreteMat);
+      mast.position.y = 3.1;
+      lamp.add(mast);
+      const arm = new THREE.Mesh(lampArmGeo, concreteMat);
+      arm.position.set(-side * 1.0, 6.1, 0);
+      lamp.add(arm);
+      const bulb = new THREE.Mesh(lampBulbGeo, i % 48 === 6 ? stripCyanMat : stripAmberMat);
+      bulb.position.set(-side * 1.85, 5.95, 0);
+      lamp.add(bulb);
+      group.add(lamp);
     }
   }
 

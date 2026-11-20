@@ -17,7 +17,7 @@ export const AI_PROFILES = [
     carId: "tofu_86",
     colorHex: "#F4F5F7",
     basePace: 0.99,
-    baseLane: -2.6,
+    baseLane: -1.9,
     skill: 0.92,
     aggression: 0.65
   },
@@ -27,7 +27,7 @@ export const AI_PROFILES = [
     carId: "bumble_buggy",
     colorHex: "#F3DB5B",
     basePace: 0.96,
-    baseLane: 2.6,
+    baseLane: 1.9,
     skill: 0.85,
     aggression: 0.82
   },
@@ -37,7 +37,7 @@ export const AI_PROFILES = [
     carId: "cobalt_hyper",
     colorHex: "#3C83EF",
     basePace: 1.03,
-    baseLane: -2.4,
+    baseLane: -1.75,
     skill: 0.96,
     aggression: 0.72
   },
@@ -47,7 +47,7 @@ export const AI_PROFILES = [
     carId: "jelly_gt",
     colorHex: "#E63946",
     basePace: 0.97,
-    baseLane: 2.4,
+    baseLane: 1.75,
     skill: 0.88,
     aggression: 0.76
   }
@@ -61,15 +61,15 @@ function wrapAngleRad(a) {
 }
 
 function safeSpawnLane(track, rawLane) {
-  const halfW = track && Number.isFinite(track.halfWidth) ? track.halfWidth : 9.0;
-  const maxLane = Math.max(1.5, halfW - 2.6);
+  const halfW = track && Number.isFinite(track.halfWidth) ? track.halfWidth : 8.2;
+  const maxLane = Math.max(1.4, halfW - 2.3);
   return clamp(rawLane, -maxLane, maxLane, 0);
 }
 
 export function createAIState(track, index = 0) {
   const profile = AI_PROFILES[index % AI_PROFILES.length];
   const carDef = getCar(profile.carId);
-  const spawnS = 8 + index * 6;
+  const spawnS = 7 + index * 5.5;
   const lane = safeSpawnLane(track, profile.baseLane);
 
   const ai = createCarPhysicsState(carDef, track, { s: spawnS, lane });
@@ -95,7 +95,7 @@ export function resetAIState(ai, track, index = null) {
   const idx = index !== null ? index : ai.index || 0;
   const profile = AI_PROFILES[idx % AI_PROFILES.length];
   const carDef = getCar(profile.carId);
-  const spawnS = 8 + idx * 6;
+  const spawnS = 7 + idx * 5.5;
   const lane = safeSpawnLane(track, profile.baseLane);
 
   resetCarPhysicsState(ai, track, carDef, { s: spawnS, lane });
@@ -287,8 +287,8 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
     let ds = (other.trackS || 0) - (ai.trackS || 0);
     if (ds < 0) ds += L;
     const isSlow = Math.abs(other.speed || 0) < 4.0;
-    const scanDist = isSlow ? 52 : 34;
-    const laneTol = isSlow ? 4.6 : 3.4;
+    const scanDist = isSlow ? 36 : 26;
+    const laneTol = isSlow ? 3.5 : 2.8;
     if (ds > 1.0 && ds < Math.min(nearestAheadDist, scanDist)) {
       const latDiff = Math.abs((other.lateralOffset || 0) - curTargetLane);
       if (latDiff < laneTol) {
@@ -297,20 +297,20 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
         const aiCurrentLat = Number.isFinite(ai.lateralOffset) ? ai.lateralOffset : ai.baseLane;
         const otherLat = other.lateralOffset || 0;
         const passSign = aiCurrentLat >= otherLat ? 1 : -1;
-        const safePassLane = otherLat + passSign * (isSlow ? 5.2 : 4.2);
-        desiredDynOffset = clamp(safePassLane - ai.baseLane, -7.2, 7.2, 0);
+        const safePassLane = otherLat + passSign * (isSlow ? 3.8 : 3.2);
+        desiredDynOffset = clamp(safePassLane - ai.baseLane, -5.2, 5.2, 0);
       }
     }
   }
 
-  ai.dynamicLaneOffset += (desiredDynOffset - (ai.dynamicLaneOffset || 0)) * (1 - Math.exp(-dtSafe * 3.2));
+  ai.dynamicLaneOffset += (desiredDynOffset - (ai.dynamicLaneOffset || 0)) * (1 - Math.exp(-dtSafe * 3.4));
 
-  // Lookahead point along closed spline
-  const lookDist = clamp(12 + 0.36 * Math.max(0, ai.speed || 0), 12, 30, 15);
+  // Lookahead point along closed spline tuned for narrow touge hairpins
+  const lookDist = clamp(8.5 + 0.30 * Math.max(0, ai.speed || 0), 8.5, 20, 10);
   const targetS = (((ai.trackS || 0) + lookDist) % L + L) % L;
   const ahead = track.at(targetS);
 
-  const safeMargin = Math.max(1.8, (ahead.halfWidth || track.halfWidth || 9) - 2.3);
+  const safeMargin = Math.max(1.5, (ahead.halfWidth || track.halfWidth || 8.2) - 2.1);
   const targetLane = clamp(ai.baseLane + ai.dynamicLaneOffset, -safeMargin, safeMargin, 0);
   // lateralOffset > 0 is car-right (-binormal)
   const tx = ahead.x - ahead.bx * targetLane;
@@ -321,41 +321,42 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
   const desiredYaw = Math.atan2(dx, dz);
   const headingErr = wrapAngleRad(desiredYaw - ai.yaw);
 
-  // Upcoming curvature lookahead
-  const p1 = track.at((((ai.trackS || 0) + 8) % L + L) % L);
-  const p2 = track.at((((ai.trackS || 0) + 28) % L + L) % L);
-  const p3 = track.at((((ai.trackS || 0) + 46) % L + L) % L);
+  // Upcoming curvature lookahead across tight switchback distance
+  const p1 = track.at((((ai.trackS || 0) + 6) % L + L) % L);
+  const p2 = track.at((((ai.trackS || 0) + 18) % L + L) % L);
+  const p3 = track.at((((ai.trackS || 0) + 32) % L + L) % L);
   const c1 = Math.abs(wrapAngleRad(p2.angle - p1.angle));
   const c2 = Math.abs(wrapAngleRad(p3.angle - p1.angle));
-  const cornerAngle = Math.max(c1, c2 * 0.72);
+  const cornerAngle = Math.max(c1, c2 * 0.78);
 
   // Fair rubber-banded pacing within [0.92x, 1.08x]
   const aiProg = computeRacerProgress(ai, track);
   const progressGap = player ? clamp((playerProg - aiProg) / 140, -1, 1, 0) : 0;
   const paceFactor = clamp((ai.basePace || 1.0) + progressGap * 0.08, 0.92, 1.08, 1.0);
 
-  const cornerSpeedScale = clamp(1 - cornerAngle * 0.42, 0.48, 1.0, 1.0);
-  const targetSpeed = (ai.def?.maxSpeed || 44) * paceFactor * cornerSpeedScale;
+  const cornerSpeedScale = clamp(1 - cornerAngle * 0.48, 0.42, 1.0, 1.0);
+  const targetSpeed = (ai.def?.maxSpeed || 32.9) * paceFactor * cornerSpeedScale;
 
   let input;
   if ((ai.recoveryTimer || 0) > 0) {
     ai.recoveryTimer = Math.max(0, ai.recoveryTimer - dtSafe);
-    // Reverse and turn toward track centerline
+    // Reverse cleanly away from barrier toward track centerline
     const centerSteer = clamp(-(ai.lateralOffset || 0) * 0.35, -1, 1, 0);
     input = {
       throttle: false,
       brake: true,
+      forceReverse: true,
       steer: centerSteer,
       drift: false,
       boost: false
     };
   } else {
-    const steer = clamp(headingErr * 2.35, -1, 1, 0);
+    const steer = clamp(headingErr * 2.1, -1, 1, 0);
     const curSpeed = ai.speed || 0;
     const throttle = curSpeed < targetSpeed;
-    const brake = curSpeed > targetSpeed + 5.0 && cornerAngle > 0.35;
-    const wantDrift = cornerAngle > 0.28 && curSpeed > 15.5 && Math.abs(headingErr) > 0.12;
-    const wantBoost = !wantDrift && (ai.boostTier || 0) >= 1 && Math.abs(headingErr) < 0.22;
+    const brake = curSpeed > targetSpeed + 4.5 && cornerAngle > 0.30;
+    const wantDrift = cornerAngle > 0.24 && curSpeed > 11.5 && Math.abs(headingErr) > 0.12;
+    const wantBoost = !wantDrift && (ai.boostTier || 0) >= 1 && Math.abs(headingErr) < 0.18;
 
     input = {
       throttle,
