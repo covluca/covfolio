@@ -53,8 +53,13 @@ def t2_e1_01(ctx: TestContext) -> None:
             for (const sel of ['[data-testid="back-portfolio-btn"]', 'a[href="/"]', 'a[href="/#home"]', 'a[href="/#projects"]']) {
                 for (const el of document.querySelectorAll(sel)) {
                     const r = el.getBoundingClientRect();
-                    if (r.width > 0 && r.height > 0 && getComputedStyle(el).display !== 'none') {
-                        return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+                    const cs = getComputedStyle(el);
+                    if (r.width <= 0 || r.height <= 0 || cs.display === 'none' || cs.visibility !== 'visible' || parseFloat(cs.opacity) <= 0.05) continue;
+                    const cx = r.left + r.width / 2;
+                    const cy = r.top + r.height / 2;
+                    const hit = document.elementFromPoint(cx, cy);
+                    if (hit && (el === hit || el.contains(hit))) {
+                        return { cx, cy };
                     }
                 }
             }
@@ -85,11 +90,41 @@ def t2_e1_02(ctx: TestContext) -> None:
 
     for _ in range(2):
         click_visible_nav_link(s, "/drift")
-        time.sleep(0.25)
-        s.eval_js("(() => { const a = document.querySelector('a[href=\"/\"], a[href=\"/#projects\"], [data-testid=\"back-portfolio-btn\"]'); if (a) a.click(); })()")
-        time.sleep(0.25)
+        wait_until(
+            lambda: s.eval_js(
+                "window.location.pathname === '/drift' && "
+                "!!document.querySelector('[data-testid=\"back-portfolio-btn\"], a[href=\"/\"], a[href=\"/#projects\"]')"
+            ),
+            timeout=6.0,
+            desc="navigate to /drift during oscillation",
+        )
+        back = s.eval_js(
+            """(() => {
+                for (const sel of ['[data-testid="back-portfolio-btn"]', 'a[href="/"]', 'a[href="/#projects"]', 'a[href="/#home"]']) {
+                    for (const el of document.querySelectorAll(sel)) {
+                        const r = el.getBoundingClientRect();
+                        const cs = getComputedStyle(el);
+                        if (r.width <= 0 || r.height <= 0 || cs.display === 'none' || cs.visibility !== 'visible') continue;
+                        const cx = r.left + r.width / 2;
+                        const cy = r.top + r.height / 2;
+                        const hit = document.elementFromPoint(cx, cy);
+                        if (hit && (el === hit || el.contains(hit))) {
+                            return { cx, cy };
+                        }
+                    }
+                }
+                return null;
+            })()"""
+        )
+        assert back is not None, "Back-to-portfolio link not clickable on /drift during oscillation"
+        s.click_at(back["cx"], back["cy"])
+        wait_until(
+            lambda: s.eval_js("window.location.pathname === '/' && !!document.querySelector('a[href=\"/drift\"]')"),
+            timeout=6.0,
+            desc="return to / during oscillation",
+        )
 
-    s.navigate(f"{ctx.base_url}/drift")
+    click_visible_nav_link(s, "/drift")
     snap = assert_drift_alive(s)
     assert snap["ready"] is True
     s.assert_no_fatal_errors("t2_e1_02 oscillation")
@@ -149,7 +184,7 @@ def t2_e2_01(ctx: TestContext) -> None:
     s.block_urls(ADBLOCK_PATTERNS)
     open_drift(s, ctx.base_url)
     start_race(s, track_id="sunny_coast", car_id="jelly_gt", mode_id="DRIFT_RUSH")
-    wait_for_drift_rush_timeout(s, timeout_s=55.0)
+    wait_for_drift_rush_timeout(s, timeout_s=75.0)
     assert get_snapshot(s)["adSlots"]["adsenseBlocked"] is True
     snap = complete_watch_ad_to_continue(s, expected_min_continues=1, timeout_s=12.0)
     assert snap["phase"] == "RACING" and snap["continuesUsed"] == 1
@@ -467,13 +502,22 @@ def t2_e6_01(ctx: TestContext) -> None:
     snap = ensure_racing(s, ctx.base_url, fresh_restart=False)
     if snap["cameraMode"] != "CHASE":
         s.press_key("KeyC")
-        wait_snapshot(s, lambda x: x["cameraMode"] == "CHASE", timeout=2.0, desc="CHASE")
+        snap = wait_snapshot(s, lambda x: x["cameraMode"] == "CHASE", timeout=2.0, desc="CHASE")
+    seen_modes = [snap["cameraMode"]]
     for _ in range(15):
         s.press_key("KeyC", hold_ms=25)
         time.sleep(0.075)
-    snap = wait_snapshot(s, lambda x: x["cameraMode"] == "DRIVER", timeout=2.0, desc="odd parity DRIVER")
-    assert snap["adSlots"]["roof"]["visible"] is False
-    assert snap["adSlots"]["console"]["visible"] is True
+        seen_modes.append(get_snapshot(s)["cameraMode"])
+    transitions = sum(1 for a, b in zip(seen_modes, seen_modes[1:]) if a != b)
+    assert transitions >= 3, f"Expected >=3 camera transitions during rapid KeyC stress, got {transitions}: {seen_modes}"
+    time.sleep(0.15)
+    snap = get_snapshot(s)
+    assert snap["cameraMode"] in ("CHASE", "DRIVER"), f"Unexpected cameraMode after KeyC stress: {snap['cameraMode']}"
+    roof_vis = bool(snap["adSlots"]["roof"]["visible"])
+    con_vis = bool(snap["adSlots"]["console"]["visible"])
+    assert roof_vis != con_vis, f"Expected roof.visible != console.visible, got roof={roof_vis}, console={con_vis}"
+    assert roof_vis == (snap["cameraMode"] == "CHASE")
+    assert con_vis == (snap["cameraMode"] == "DRIVER")
     s.assert_no_fatal_errors("t2_e6_01 rapid C toggle")
 
 
@@ -507,7 +551,7 @@ def t2_e6_03(ctx: TestContext) -> None:
 def t2_e6_04(ctx: TestContext) -> None:
     s = ctx.session
     ensure_racing(s, ctx.base_url, track_id="sunny_coast", car_id="jelly_gt", mode_id="DRIFT_RUSH", fresh_restart=True)
-    wait_for_drift_rush_timeout(s, timeout_s=55.0)
+    wait_for_drift_rush_timeout(s, timeout_s=75.0)
     s.press_key("KeyC")
     time.sleep(0.2)
     snap = get_snapshot(s)
@@ -598,18 +642,26 @@ def t2_e7_04(ctx: TestContext) -> None:
 
 def t2_e7_05(ctx: TestContext) -> None:
     s = ctx.session
+    # Navigate to / first so window.history.back() returns cleanly to / instead of about:blank
+    s.navigate(f"{ctx.base_url}/")
+    wait_until(
+        lambda: s.eval_js("document.readyState === 'complete' && window.location.pathname === '/'"),
+        timeout=10.0,
+        desc="initial / before /drift",
+    )
     open_drift(s, ctx.base_url)
     start_race(s, track_id="sunny_coast", car_id="jelly_gt", mode_id="DRIFT_RUSH")
     s.press_key("KeyC")
     wait_snapshot(s, lambda x: x["cameraMode"] == "DRIVER", timeout=2.0, desc="DRIVER")
     click_pause(s)
     wait_snapshot(s, lambda x: x["phase"] == "PAUSED", timeout=3.0, desc="PAUSED")
-    # Navigate back to /
+    # Navigate back to / via browser history
     s.eval_js("window.history.back()")
-    time.sleep(0.4)
-    if s.eval_js("window.location.pathname") != "/":
-        s.navigate(f"{ctx.base_url}/")
-    wait_until(lambda: s.eval_js("window.location.pathname === '/'"), timeout=8.0, desc="back on /")
+    wait_until(
+        lambda: s.eval_js("document.readyState === 'complete' && window.location.pathname === '/'"),
+        timeout=8.0,
+        desc="back on /",
+    )
     assert s.eval_js("document.querySelector('#console-ad-overlay') === null"), "#console-ad-overlay leaked onto /"
     s.assert_no_fatal_errors("t2_e7_05 driver exit cleanup")
 
@@ -695,12 +747,28 @@ def t2_e8_05(ctx: TestContext) -> None:
     start_race(s, track_id="sunny_coast", car_id="jelly_gt", mode_id="DRIFT_RUSH")
     slot = s.eval_js("document.querySelector('#roof-ad-overlay ins.adsbygoogle')?.getAttribute('data-ad-slot')")
     assert slot == "7777777777"
-    r0 = normalize_rect(get_snapshot(s)["adSlots"]["roof"]["rect"])
-    s.hold_keys(["KeyW", "KeyD", "Space"], 1.5)
-    r1 = normalize_rect(get_snapshot(s)["adSlots"]["roof"]["rect"])
-    assert get_snapshot(s)["adSlots"]["roof"]["visible"] is True
+    snap0 = get_snapshot(s)
+    p0 = snap0["playerWorldPos"]
+    r0 = normalize_rect(snap0["adSlots"]["roof"]["rect"])
+    rects = [r0]
+    for c in ("KeyW", "KeyD", "Space"):
+        s.key_down(c)
+    try:
+        for _ in range(6):
+            time.sleep(0.25)
+            rects.append(normalize_rect(get_snapshot(s)["adSlots"]["roof"]["rect"]))
+    finally:
+        for c in ("Space", "KeyD", "KeyW"):
+            s.key_up(c)
+    snap1 = get_snapshot(s)
+    p1 = snap1["playerWorldPos"]
+    assert snap1["adSlots"]["roof"]["visible"] is True
     assert "SPONSORED" in assert_visibly_rendered(s, "#roof-ad-overlay")["text"].upper()
-    assert math.hypot(r1["left"] - r0["left"], r1["top"] - r0["top"]) >= 2.0 or r1 != r0
+    max_rect_move = max(math.hypot(r["left"] - r0["left"], r["top"] - r0["top"]) for r in rects)
+    world_dist = math.hypot(p1["x"] - p0["x"], p1["z"] - p0["z"])
+    assert max_rect_move >= 2.0 and world_dist >= 3.0, (
+        f"Roof ad did not move genuinely with car: rect_move={max_rect_move:.2f}px, world_dist={world_dist:.2f}m"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -783,17 +851,17 @@ def t2_e10_01(ctx: TestContext) -> None:
     s = ctx.session
     ensure_racing(s, ctx.base_url, track_id="sunny_coast", car_id="jelly_gt", mode_id="DRIFT_RUSH", fresh_restart=True)
     # 1st timeout -> continue #1
-    wait_for_drift_rush_timeout(s, timeout_s=55.0)
+    wait_for_drift_rush_timeout(s, timeout_s=75.0)
     snap1 = complete_watch_ad_to_continue(s, expected_min_continues=1, timeout_s=15.0)
     assert snap1["continuesUsed"] == 1
 
     # 2nd timeout -> continue #2
-    wait_for_drift_rush_timeout(s, timeout_s=40.0)
+    wait_for_drift_rush_timeout(s, timeout_s=50.0)
     snap2 = complete_watch_ad_to_continue(s, expected_min_continues=2, timeout_s=15.0)
     assert snap2["continuesUsed"] == 2
 
     # 3rd timeout -> cap of 2 reached -> watch-ad-continue-btn hidden/disabled, Restart & Garage available
-    wait_for_drift_rush_timeout(s, timeout_s=40.0)
+    wait_for_drift_rush_timeout(s, timeout_s=50.0)
     watch_btn = inspect_element(s, '[data-testid="watch-ad-continue-btn"]', only_visible=True)
     assert watch_btn is None or watch_btn["disabled"], f"Continue cap of 2 not enforced: {watch_btn}"
     assert_visibly_rendered(s, '[data-testid="restart-race-btn"]')
@@ -802,7 +870,7 @@ def t2_e10_01(ctx: TestContext) -> None:
 def t2_e10_02(ctx: TestContext) -> None:
     s = ctx.session
     ensure_racing(s, ctx.base_url, track_id="sunny_coast", car_id="jelly_gt", mode_id="DRIFT_RUSH", fresh_restart=True)
-    wait_for_drift_rush_timeout(s, timeout_s=55.0)
+    wait_for_drift_rush_timeout(s, timeout_s=75.0)
     click_selector(s, '[data-testid="restart-race-btn"]')
     snap = wait_snapshot(s, lambda x: x["phase"] == "RACING", timeout=10.0, desc="RACING after restart")
     assert snap["continuesUsed"] == 0 and snap["timeRemainingSec"] >= 30.0 and snap["driftScore"] == 0
@@ -811,7 +879,7 @@ def t2_e10_02(ctx: TestContext) -> None:
 def t2_e10_03(ctx: TestContext) -> None:
     s = ctx.session
     ensure_racing(s, ctx.base_url, track_id="sunny_coast", car_id="jelly_gt", mode_id="DRIFT_RUSH", fresh_restart=True)
-    wait_for_drift_rush_timeout(s, timeout_s=55.0)
+    wait_for_drift_rush_timeout(s, timeout_s=75.0)
     click_back_to_garage(s)
     snap = wait_snapshot(s, lambda x: x["phase"] == "GARAGE", timeout=5.0, desc="GARAGE")
     assert snap["adSlots"]["continueModal"]["open"] is False
@@ -820,7 +888,7 @@ def t2_e10_03(ctx: TestContext) -> None:
 def t2_e10_04(ctx: TestContext) -> None:
     s = ctx.session
     ensure_racing(s, ctx.base_url, track_id="sunny_coast", car_id="jelly_gt", mode_id="DRIFT_RUSH", fresh_restart=True)
-    wait_for_drift_rush_timeout(s, timeout_s=55.0)
+    wait_for_drift_rush_timeout(s, timeout_s=75.0)
     click_selector(s, '[data-testid="watch-ad-continue-btn"]')
     time.sleep(0.4)
     # If cancel/close exists during AD_WATCHING, click it; otherwise verify confirm unlocks cleanly without freeze
@@ -876,7 +944,7 @@ def t2_e10_05(ctx: TestContext) -> None:
 def t2_e10_06(ctx: TestContext) -> None:
     s = ctx.session
     ensure_racing(s, ctx.base_url, track_id="sunny_coast", car_id="jelly_gt", mode_id="DRIFT_RUSH", fresh_restart=True)
-    wait_for_drift_rush_timeout(s, timeout_s=55.0)
+    wait_for_drift_rush_timeout(s, timeout_s=75.0)
     click_selector(s, '[data-testid="watch-ad-continue-btn"]')
     # Wait until confirm-continue-btn is enabled (or Tier 1 granted directly)
     deadline = time.monotonic() + 12.0

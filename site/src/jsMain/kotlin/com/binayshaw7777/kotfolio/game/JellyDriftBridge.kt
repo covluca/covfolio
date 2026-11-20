@@ -100,6 +100,7 @@ data class JellyDriftSnapshot(
     val continuesUsed: Int = 0,
     val position: Int = 1,
     val aiCount: Int = 4,
+    val countdown: Double = 0.0,
     val playerWorldPos: PlayerWorldPosDto = PlayerWorldPosDto(),
     val jellySpring: JellySpringDto = JellySpringDto(),
     val adSlots: AdSlotsSnapshotDto = AdSlotsSnapshotDto(),
@@ -114,7 +115,7 @@ private inline fun <reified T : Enum<T>> enumValueOrDefault(raw: dynamic, defaul
 
 private fun asDoubleOr(raw: dynamic, defaultValue: Double = 0.0): Double {
     val num = raw as? Number
-    return num?.toDouble() ?: defaultValue
+    return num?.toDouble()?.takeIf { it.isFinite() } ?: defaultValue
 }
 
 private fun asIntOr(raw: dynamic, defaultValue: Int = 0): Int {
@@ -199,6 +200,7 @@ fun parseSnapshot(raw: dynamic): JellyDriftSnapshot {
         continuesUsed = asIntOr(raw.continuesUsed, 0),
         position = asIntOr(raw.position, 1),
         aiCount = asIntOr(raw.aiCount, 4),
+        countdown = asDoubleOr(raw.countdown, 0.0),
         playerWorldPos = if (pos != null && pos != undefined) {
             PlayerWorldPosDto(
                 x = asDoubleOr(pos.x, 0.0),
@@ -246,6 +248,33 @@ class JellyDriftBridge {
         resolve(value)
     }
 
+    private fun importModuleWithRetry(baseUrl: String, attempt: Int = 0): Promise<dynamic> {
+        val url = if (attempt == 0) baseUrl else "$baseUrl?r=$attempt"
+        return dynamicImport(url).then<dynamic>(
+            onFulfilled = { mod: dynamic -> mod },
+            onRejected = { err: Throwable ->
+                if (attempt < 2) {
+                    Promise<dynamic> { resolve, reject ->
+                        window.setTimeout({
+                            importModuleWithRetry(baseUrl, attempt + 1).then<dynamic>(
+                                onFulfilled = { res: dynamic ->
+                                    resolve(res)
+                                    null
+                                },
+                                onRejected = { e: Throwable ->
+                                    reject(e)
+                                    null
+                                }
+                            )
+                        }, 250 * (attempt + 1))
+                    }
+                } else {
+                    Promise.reject(err)
+                }
+            }
+        )
+    }
+
     private var controller: dynamic = null
     var loadStatus: EngineLoadStatus = EngineLoadStatus.INITIALIZING
         private set
@@ -278,12 +307,12 @@ class JellyDriftBridge {
 
         ensureAdsPromise.then<dynamic> { _: dynamic ->
             if (isDisposed()) return@then resolvedPromise(null)
-            dynamicImport("/jellydrift/vendor/three.module.min.js")
+            importModuleWithRetry("/jellydrift/vendor/three.module.min.js")
         }.then<dynamic>(
             onFulfilled = { threeMod: dynamic ->
                 if (isDisposed() || threeMod == null) return@then resolvedPromise(null)
                 threeRevision = threeMod.REVISION as? String
-                dynamicImport("/jellydrift/engine.js").then<dynamic>(
+                importModuleWithRetry("/jellydrift/engine.js").then<dynamic>(
                     onFulfilled = { engineMod: dynamic ->
                         if (!isDisposed()) {
                             val factory = engineMod?.createJellyDriftEngine
@@ -311,10 +340,10 @@ class JellyDriftBridge {
                         }
                         null
                     },
-                    onRejected = { _: Throwable ->
+                    onRejected = { err: Throwable ->
                         if (!isDisposed()) {
-                            loadStatus = EngineLoadStatus.VENDOR_READY_AWAITING_ENGINE
-                            statusMessage = "Three.js r${threeRevision ?: "?"} & AdSense ready — awaiting M3 engine.js"
+                            loadStatus = EngineLoadStatus.ERROR
+                            statusMessage = "Failed to load Jelly Drift engine: ${err.message ?: err}"
                             onLoadStateChange(loadStatus, threeRevision, statusMessage)
                         }
                         null
@@ -330,6 +359,18 @@ class JellyDriftBridge {
                 null
             }
         )
+    }
+
+    fun selectTrack(trackId: String) {
+        runCatching { controller?.selectTrack(trackId) }
+    }
+
+    fun selectCar(carId: String) {
+        runCatching { controller?.selectCar(carId) }
+    }
+
+    fun selectMode(mode: GameMode) {
+        runCatching { controller?.selectMode(mode.name) }
     }
 
     fun startRace(trackId: String, carId: String, mode: GameMode) {
@@ -370,8 +411,20 @@ class JellyDriftBridge {
         runCatching { controller?.grantContinue() }
     }
 
+    fun requestContinue() {
+        runCatching { controller?.requestContinue() }
+    }
+
+    fun cancelContinue() {
+        runCatching { controller?.cancelContinue() }
+    }
+
     fun setMuted(muted: Boolean) {
         runCatching { controller?.setMuted(muted) }
+    }
+
+    fun confirmUiPhase(phase: GamePhase) {
+        runCatching { controller?.confirmUiPhase(phase.name) }
     }
 
     fun setTouchInput(

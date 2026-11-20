@@ -1,0 +1,734 @@
+import * as THREE from "./vendor/three.module.min.js";
+
+export const CARS = {
+  jelly_gt: {
+    id: "jelly_gt",
+    name: "Jelly GT",
+    subtitle: "Balanced Arcade Coupe",
+    colorHex: "#E63946",
+    accentHex: "#FFFFFF",
+    primary: 0xe63946,
+    accent: 0xffffff,
+    trim: 0x1d2330,
+    maxSpeed: 44,
+    topSpeed: 44,
+    accel: 34,
+    brake: 44,
+    steerRate: 2.25,
+    reverseSpeed: 13,
+    driftGrip: 1.0,
+    jellyBounce: 1.0,
+    mass: 1.0,
+    width: 2.05,
+    height: 1.38,
+    length: 4.3,
+    wheelBase: 2.68,
+    wheelRadius: 0.36,
+    stats: {
+      topSpeed: 7,
+      accel: 7,
+      driftGrip: 7,
+      jellyBounce: 7
+    }
+  },
+  tofu_86: {
+    id: "tofu_86",
+    name: "Tofu 86",
+    subtitle: "Drift Specialist Fastback",
+    colorHex: "#F4F5F7",
+    accentHex: "#181B22",
+    primary: 0xf4f5f7,
+    accent: 0x181b22,
+    trim: 0xe63946,
+    maxSpeed: 42,
+    topSpeed: 42,
+    accel: 32,
+    brake: 42,
+    steerRate: 2.35,
+    reverseSpeed: 12,
+    driftGrip: 1.24,
+    jellyBounce: 0.92,
+    mass: 0.92,
+    width: 1.96,
+    height: 1.36,
+    length: 4.2,
+    wheelBase: 2.6,
+    wheelRadius: 0.35,
+    stats: {
+      topSpeed: 6,
+      accel: 7,
+      driftGrip: 10,
+      jellyBounce: 6
+    }
+  },
+  bumble_buggy: {
+    id: "bumble_buggy",
+    name: "Bumble Buggy",
+    subtitle: "High-Bounce Rally Micro-Truck",
+    colorHex: "#F3DB5B",
+    accentHex: "#222630",
+    primary: 0xf3db5b,
+    accent: 0x222630,
+    trim: 0xff9f1c,
+    maxSpeed: 40,
+    topSpeed: 40,
+    accel: 38,
+    brake: 40,
+    steerRate: 2.30,
+    reverseSpeed: 14,
+    driftGrip: 0.95,
+    jellyBounce: 1.35,
+    mass: 1.18,
+    width: 2.2,
+    height: 1.56,
+    length: 4.05,
+    wheelBase: 2.55,
+    wheelRadius: 0.42,
+    stats: {
+      topSpeed: 6,
+      accel: 9,
+      driftGrip: 6,
+      jellyBounce: 10
+    }
+  },
+  cobalt_hyper: {
+    id: "cobalt_hyper",
+    name: "Cobalt Hyper",
+    subtitle: "Low-Slug Aero Hypercar",
+    colorHex: "#3C83EF",
+    accentHex: "#00E5FF",
+    primary: 0x3c83ef,
+    accent: 0x00e5ff,
+    trim: 0x101828,
+    maxSpeed: 52,
+    topSpeed: 52,
+    accel: 37,
+    brake: 48,
+    steerRate: 2.15,
+    reverseSpeed: 13,
+    driftGrip: 1.06,
+    jellyBounce: 0.78,
+    mass: 1.05,
+    width: 2.12,
+    height: 1.24,
+    length: 4.55,
+    wheelBase: 2.82,
+    wheelRadius: 0.35,
+    stats: {
+      topSpeed: 10,
+      accel: 8,
+      driftGrip: 8,
+      jellyBounce: 5
+    }
+  }
+};
+
+export const CAR_IDS = ["jelly_gt", "tofu_86", "bumble_buggy", "cobalt_hyper"];
+
+export function getCar(id) {
+  return CARS[id] || CARS[CAR_IDS[0]];
+}
+
+function makeWheelAssembly(radius, width, rimColor, trackGeo, trackMat) {
+  const spinGroup = new THREE.Group();
+  spinGroup.name = "wheel-spin";
+
+  const tireGeo = trackGeo(new THREE.CylinderGeometry(radius, radius, width, 18));
+  tireGeo.rotateZ(Math.PI / 2);
+  const tireMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: 0x171a21,
+      roughness: 0.85,
+      metalness: 0.1
+    })
+  );
+  const tire = new THREE.Mesh(tireGeo, tireMat);
+  spinGroup.add(tire);
+
+  const rimGeo = trackGeo(new THREE.CylinderGeometry(radius * 0.58, radius * 0.58, width + 0.02, 12));
+  rimGeo.rotateZ(Math.PI / 2);
+  const rimMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: rimColor,
+      roughness: 0.32,
+      metalness: 0.68
+    })
+  );
+  const rim = new THREE.Mesh(rimGeo, rimMat);
+  spinGroup.add(rim);
+
+  const hubGeo = trackGeo(new THREE.CylinderGeometry(radius * 0.22, radius * 0.22, width + 0.04, 8));
+  hubGeo.rotateZ(Math.PI / 2);
+  const hubMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x0f1219, metalness: 0.5, roughness: 0.4 }));
+  spinGroup.add(new THREE.Mesh(hubGeo, hubMat));
+
+  return spinGroup;
+}
+
+/**
+ * Supports both createCarMesh(def, options) and legacy createCarMesh(THREE, def, options).
+ * Coordinate frame: +Z forward, +Y up, +X car-left, -X car-right.
+ */
+export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
+  let def;
+  let options;
+  if (defOrThree && typeof defOrThree.Group === "function") {
+    def = typeof optionsOrDef === "string" ? getCar(optionsOrDef) : optionsOrDef || getCar("jelly_gt");
+    options = maybeOpts || {};
+  } else {
+    def = typeof defOrThree === "string" ? getCar(defOrThree) : defOrThree || getCar("jelly_gt");
+    options = optionsOrDef || {};
+  }
+
+  const disposables = [];
+  const trackGeo = (g) => { disposables.push(g); return g; };
+  const trackMat = (m) => { disposables.push(m); return m; };
+
+  const carRoot = new THREE.Group();
+  carRoot.name = "carRoot";
+
+  const jellyChassis = new THREE.Group();
+  jellyChassis.name = "jellyChassis";
+  carRoot.add(jellyChassis);
+
+  const bodyMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: def.primary,
+      roughness: 0.28,
+      metalness: 0.35
+    })
+  );
+  const accentMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: def.accent,
+      roughness: 0.36,
+      metalness: 0.28
+    })
+  );
+  const trimMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: def.trim,
+      roughness: 0.6,
+      metalness: 0.25
+    })
+  );
+  const dashMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: 0x161a24,
+      roughness: 0.72,
+      metalness: 0.18
+    })
+  );
+  const interiorMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: 0x1e2432,
+      roughness: 0.78,
+      metalness: 0.15,
+      side: THREE.DoubleSide
+    })
+  );
+  const glassMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: 0x99d8ff,
+      roughness: 0.12,
+      metalness: 0.15,
+      transparent: true,
+      opacity: 0.14,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    })
+  );
+  const headLightMat = trackMat(new THREE.MeshBasicMaterial({ color: 0xfff8cf }));
+  const tailLightMat = trackMat(new THREE.MeshBasicMaterial({ color: 0xff2b48 }));
+  const roofLightMat = trackMat(new THREE.MeshBasicMaterial({ color: def.id === "cobalt_hyper" ? 0x00e5ff : 0xf3db5b }));
+
+  const w = def.width;
+  const len = def.length;
+  const rWheel = def.wheelRadius;
+  const isBuggy = def.id === "bumble_buggy";
+  const isHyper = def.id === "cobalt_hyper";
+  const isTofu = def.id === "tofu_86";
+
+  const groundClearance = isBuggy ? 0.34 : isHyper ? 0.18 : 0.24;
+  const sillTopY = groundClearance + (isBuggy ? 0.44 : isHyper ? 0.32 : 0.38);
+  const roofTopY = isBuggy ? 1.54 : isHyper ? 1.28 : 1.40;
+  const hoodTopY = isBuggy ? 0.88 : isHyper ? 0.64 : 0.74;
+
+  // --- 1. Lower Chassis Tub / Floorpan / Sills (Open Interior Cockpit!) ---
+  const body = new THREE.Group();
+  body.name = "car-body";
+  jellyChassis.add(body);
+
+  // Floorpan
+  const floorGeo = trackGeo(new THREE.BoxGeometry(w * 0.92, 0.14, len * 0.88));
+  const floorMesh = new THREE.Mesh(floorGeo, trimMat);
+  floorMesh.position.set(0, groundClearance + 0.07, 0);
+  body.add(floorMesh);
+
+  // Left & Right Door Sills (open cockpit side walls up to sillTopY)
+  const sillH = sillTopY - groundClearance;
+  const sillGeo = trackGeo(new THREE.BoxGeometry(0.18, sillH, len * 0.56));
+  for (const side of [-1, 1]) {
+    const sill = new THREE.Mesh(sillGeo, bodyMat);
+    sill.position.set(side * (w * 0.5 - 0.09), groundClearance + sillH * 0.5, -0.05);
+    body.add(sill);
+  }
+
+  // Front Hood / Nose Section (forward of cabin: z = +0.76 .. +len*0.48)
+  const hoodLen = len * 0.34;
+  const hoodZ = len * 0.5 - hoodLen * 0.5 - 0.06;
+  const hoodH = hoodTopY - groundClearance;
+  const hoodGeo = trackGeo(new THREE.BoxGeometry(w * 0.96, hoodH, hoodLen));
+  const hood = new THREE.Mesh(hoodGeo, isTofu ? accentMat : bodyMat);
+  hood.position.set(0, groundClearance + hoodH * 0.5, hoodZ);
+  if (isHyper) {
+    hood.rotation.x = 0.08;
+  }
+  body.add(hood);
+
+  // Rear Deck / Engine Bay (behind cabin: z = -len*0.48 .. -0.68)
+  const rearLen = len * 0.30;
+  const rearZ = -len * 0.5 + rearLen * 0.5 + 0.06;
+  const rearH = (isBuggy ? 0.52 : 0.48);
+  const rearGeo = trackGeo(new THREE.BoxGeometry(w * 0.96, rearH, rearLen));
+  const rearDeck = new THREE.Mesh(rearGeo, bodyMat);
+  rearDeck.position.set(0, groundClearance + rearH * 0.5, rearZ);
+  body.add(rearDeck);
+
+  // Rear Bulkhead (behind driver seat)
+  const bulkheadGeo = trackGeo(new THREE.BoxGeometry(w * 0.86, 0.52, 0.14));
+  const bulkhead = new THREE.Mesh(bulkheadGeo, interiorMat);
+  bulkhead.position.set(0, groundClearance + 0.34, -0.58);
+  body.add(bulkhead);
+
+  // Bumpers
+  const frontBumperGeo = trackGeo(new THREE.BoxGeometry(w * 1.0, isBuggy ? 0.24 : 0.16, 0.24));
+  const frontBumper = new THREE.Mesh(frontBumperGeo, isTofu || isBuggy ? accentMat : trimMat);
+  frontBumper.position.set(0, groundClearance + 0.12, len * 0.5 - 0.02);
+  body.add(frontBumper);
+
+  const rearBumperGeo = trackGeo(new THREE.BoxGeometry(w * 1.0, 0.18, 0.24));
+  const rearBumper = new THREE.Mesh(rearBumperGeo, trimMat);
+  rearBumper.position.set(0, groundClearance + 0.12, -len * 0.5 + 0.02);
+  body.add(rearBumper);
+
+  // Headlights & Taillights
+  const hlGeo = trackGeo(new THREE.BoxGeometry(0.34, 0.14, 0.08));
+  for (const side of [-1, 1]) {
+    const hl = new THREE.Mesh(hlGeo, headLightMat);
+    hl.position.set(side * (w * 0.33), groundClearance + (isBuggy ? 0.38 : 0.28), len * 0.5 + 0.02);
+    body.add(hl);
+
+    const tl = new THREE.Mesh(hlGeo, tailLightMat);
+    tl.position.set(side * (w * 0.33), groundClearance + 0.34, -len * 0.5 - 0.02);
+    body.add(tl);
+  }
+
+  // --- 2. Silhouette-Distinct Details per Car ---
+  if (def.id === "jelly_gt") {
+    // Racing center stripe
+    const stripeGeo = trackGeo(new THREE.BoxGeometry(0.36, 0.02, hoodLen * 0.95));
+    const stripe = new THREE.Mesh(stripeGeo, accentMat);
+    stripe.position.set(0, hoodTopY + 0.015, hoodZ);
+    body.add(stripe);
+
+    // Front splitter
+    const splitterGeo = trackGeo(new THREE.BoxGeometry(w * 1.04, 0.06, 0.34));
+    const splitter = new THREE.Mesh(splitterGeo, trimMat);
+    splitter.position.set(0, groundClearance + 0.03, len * 0.5 + 0.06);
+    body.add(splitter);
+
+    // Twin-post GT Wing
+    const wingY = groundClearance + rearH + 0.30;
+    const postGeo = trackGeo(new THREE.BoxGeometry(0.08, 0.32, 0.14));
+    for (const side of [-0.48, 0.48]) {
+      const post = new THREE.Mesh(postGeo, trimMat);
+      post.position.set(side, groundClearance + rearH + 0.14, -len * 0.44);
+      body.add(post);
+    }
+    const wingGeo = trackGeo(new THREE.BoxGeometry(w * 0.94, 0.07, 0.34));
+    const wing = new THREE.Mesh(wingGeo, accentMat);
+    wing.position.set(0, wingY, -len * 0.46);
+    body.add(wing);
+  } else if (isTofu) {
+    // Panda black side beltline trim
+    const sideTrimGeo = trackGeo(new THREE.BoxGeometry(w * 0.99, 0.10, len * 0.88));
+    const sideTrim = new THREE.Mesh(sideTrimGeo, accentMat);
+    sideTrim.position.set(0, groundClearance + 0.20, 0);
+    body.add(sideTrim);
+
+    // Pop-up headlight housings
+    const popGeo = trackGeo(new THREE.BoxGeometry(0.36, 0.14, 0.24));
+    for (const side of [-1, 1]) {
+      const pop = new THREE.Mesh(popGeo, bodyMat);
+      pop.position.set(side * (w * 0.33), hoodTopY + 0.07, len * 0.5 - 0.14);
+      body.add(pop);
+    }
+
+    // Fastback ducktail spoiler
+    const duckGeo = trackGeo(new THREE.BoxGeometry(w * 0.92, 0.14, 0.22));
+    const duck = new THREE.Mesh(duckGeo, accentMat);
+    duck.position.set(0, groundClearance + rearH + 0.08, -len * 0.46);
+    duck.rotation.x = -0.35;
+    body.add(duck);
+  } else if (isBuggy) {
+    // Chunky fender flares
+    const flareGeo = trackGeo(new THREE.BoxGeometry(0.22, 0.24, 0.96));
+    for (const side of [-1, 1]) {
+      for (const zOff of [def.wheelBase * 0.5, -def.wheelBase * 0.5]) {
+        const flare = new THREE.Mesh(flareGeo, accentMat);
+        flare.position.set(side * (w * 0.49), groundClearance + 0.32, zOff);
+        body.add(flare);
+      }
+    }
+    // Front tubular bullbar
+    const bullGeo = trackGeo(new THREE.BoxGeometry(w * 0.72, 0.22, 0.18));
+    const bull = new THREE.Mesh(bullGeo, trimMat);
+    bull.position.set(0, groundClearance + 0.28, len * 0.5 + 0.10);
+    body.add(bull);
+
+    // Diagonal rear roll-cage bars + tailgate spare tire
+    const barGeo = trackGeo(new THREE.CylinderGeometry(0.05, 0.05, 1.25, 8));
+    for (const side of [-0.56, 0.56]) {
+      const bar = new THREE.Mesh(barGeo, accentMat);
+      bar.position.set(side, groundClearance + rearH + 0.36, -1.05);
+      bar.rotation.x = 0.72;
+      body.add(bar);
+    }
+    const spareGeo = trackGeo(new THREE.CylinderGeometry(0.36, 0.36, 0.24, 14));
+    spareGeo.rotateX(Math.PI / 2);
+    const spare = new THREE.Mesh(spareGeo, accentMat);
+    spare.position.set(0, groundClearance + 0.42, -len * 0.5 - 0.12);
+    body.add(spare);
+  } else if (isHyper) {
+    // Side aero pods & cyan trim strips
+    const podGeo = trackGeo(new THREE.BoxGeometry(0.22, 0.32, len * 0.46));
+    const stripGeo = trackGeo(new THREE.BoxGeometry(0.05, 0.07, len * 0.48));
+    for (const side of [-1, 1]) {
+      const pod = new THREE.Mesh(podGeo, trimMat);
+      pod.position.set(side * (w * 0.49), groundClearance + 0.20, -0.08);
+      body.add(pod);
+
+      const strip = new THREE.Mesh(stripGeo, accentMat);
+      strip.position.set(side * (w * 0.52), groundClearance + 0.24, -0.08);
+      body.add(strip);
+    }
+    // Split rear diffuser + low aero wing
+    const wingGeo = trackGeo(new THREE.BoxGeometry(w * 1.02, 0.06, 0.38));
+    const wing = new THREE.Mesh(wingGeo, trimMat);
+    wing.position.set(0, groundClearance + rearH + 0.22, -len * 0.47);
+    body.add(wing);
+
+    const wingEdgeGeo = trackGeo(new THREE.BoxGeometry(w * 1.04, 0.03, 0.08));
+    const wingEdge = new THREE.Mesh(wingEdgeGeo, accentMat);
+    wingEdge.position.set(0, groundClearance + rearH + 0.23, -len * 0.49);
+    body.add(wingEdge);
+  }
+
+  // --- 3. Open Cabin Frame (Thin A-pillars, B/C-pillars, Roof, Tinted Windshield) ---
+  const cabin = new THREE.Group();
+  cabin.name = "cabin-frame";
+  jellyChassis.add(cabin);
+
+  const roofW = w * 0.78;
+  const roofL = len * 0.35;
+  const roofZ = -0.08;
+  const roofThickness = 0.07;
+
+  const roofGeo = trackGeo(new THREE.BoxGeometry(roofW, roofThickness, roofL));
+  const roofPanel = new THREE.Mesh(roofGeo, isTofu ? bodyMat : bodyMat);
+  roofPanel.position.set(0, roofTopY - roofThickness * 0.5, roofZ);
+  cabin.add(roofPanel);
+
+  // Inner dark headliner so driver view never sees bright white underside
+  const headlinerGeo = trackGeo(new THREE.PlaneGeometry(roofW * 0.94, roofL * 0.94));
+  headlinerGeo.rotateX(Math.PI / 2);
+  const headliner = new THREE.Mesh(headlinerGeo, interiorMat);
+  headliner.position.set(0, roofTopY - roofThickness - 0.005, roofZ);
+  cabin.add(headliner);
+
+  // Thin A-pillars connecting front dash corners to roof front corners
+  const aPillarTopY = roofTopY - 0.04;
+  const aPillarBotY = sillTopY;
+  const aStartZ = 0.92;
+  const aEndZ = roofZ + roofL * 0.5;
+  const aLen = Math.hypot(aPillarTopY - aPillarBotY, aStartZ - aEndZ);
+  const aTilt = Math.atan2(aStartZ - aEndZ, aPillarTopY - aPillarBotY);
+  const aPillarGeo = trackGeo(new THREE.BoxGeometry(0.045, aLen, 0.055));
+
+  for (const side of [-1, 1]) {
+    const pillar = new THREE.Mesh(aPillarGeo, trimMat);
+    pillar.position.set(
+      side * (roofW * 0.5 - 0.02),
+      (aPillarTopY + aPillarBotY) * 0.5,
+      (aStartZ + aEndZ) * 0.5
+    );
+    pillar.rotation.x = -aTilt;
+    cabin.add(pillar);
+  }
+
+  // Subtle translucent windshield (never occludes horizon or console)
+  const wsGeo = trackGeo(new THREE.PlaneGeometry(roofW * 0.94, aLen * 0.96));
+  const windshield = new THREE.Mesh(wsGeo, glassMat);
+  windshield.position.set(0, (aPillarTopY + aPillarBotY) * 0.5, (aStartZ + aEndZ) * 0.5);
+  windshield.rotation.x = Math.PI * 0.5 - aTilt;
+  cabin.add(windshield);
+
+  // Rear B/C-pillars
+  const cStartZ = -0.82;
+  const cEndZ = roofZ - roofL * 0.5;
+  const cLen = Math.hypot(aPillarTopY - aPillarBotY, cStartZ - cEndZ);
+  const cTilt = Math.atan2(cEndZ - cStartZ, aPillarTopY - aPillarBotY);
+  const cPillarGeo = trackGeo(new THREE.BoxGeometry(0.08, cLen, 0.14));
+  for (const side of [-1, 1]) {
+    const cp = new THREE.Mesh(cPillarGeo, bodyMat);
+    cp.position.set(
+      side * (roofW * 0.5 - 0.03),
+      (aPillarTopY + aPillarBotY) * 0.5,
+      (cStartZ + cEndZ) * 0.5
+    );
+    cp.rotation.x = cTilt;
+    cabin.add(cp);
+  }
+
+  // --- 4. Open Interior Cockpit: Low Dash, Rotating Steering Wheel, Driver Head, Angled Center Console ---
+  // Low-profile dash (top <= 0.84m so driver eye y=1.04 sees clearly over the hood!)
+  const dashGeo = trackGeo(new THREE.BoxGeometry(w * 0.78, 0.24, 0.38));
+  const dash = new THREE.Mesh(dashGeo, dashMat);
+  dash.position.set(0, 0.68, 0.74);
+  jellyChassis.add(dash);
+
+  // Driver Seat & Head/Helmet
+  const seatGeo = trackGeo(new THREE.BoxGeometry(0.46, 0.52, 0.16));
+  const seat = new THREE.Mesh(seatGeo, interiorMat);
+  seat.position.set(-0.25, 0.64, -0.08);
+  seat.rotation.x = -0.15;
+  jellyChassis.add(seat);
+
+  const driverHead = new THREE.Group();
+  driverHead.name = "driver-head";
+  driverHead.position.set(-0.25, 1.04, 0.04);
+  const helmetGeo = trackGeo(new THREE.SphereGeometry(0.17, 12, 10));
+  const helmetMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: def.id === "tofu_86" ? 0xf8fafc : def.accent,
+      roughness: 0.35,
+      metalness: 0.25
+    })
+  );
+  const helmet = new THREE.Mesh(helmetGeo, helmetMat);
+  driverHead.add(helmet);
+
+  const visorGeo = trackGeo(new THREE.BoxGeometry(0.24, 0.09, 0.14));
+  const visorMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.15, metalness: 0.8 }));
+  const visor = new THREE.Mesh(visorGeo, visorMat);
+  visor.position.set(0, 0.02, 0.12);
+  driverHead.add(visor);
+  jellyChassis.add(driverHead);
+
+  // Steering Column + Animated Steering Wheel in front of driver eye (-0.25, 1.04, 0.08)
+  const steerMount = new THREE.Group();
+  steerMount.position.set(-0.25, 0.86, 0.48);
+  steerMount.rotation.x = 0.45; // tilted back toward driver
+  jellyChassis.add(steerMount);
+
+  const colGeo = trackGeo(new THREE.CylinderGeometry(0.032, 0.04, 0.28, 8));
+  colGeo.rotateX(Math.PI / 2);
+  const col = new THREE.Mesh(colGeo, trimMat);
+  col.position.z = 0.12;
+  steerMount.add(col);
+
+  const steerWheel = new THREE.Group();
+  steerWheel.name = "steer-wheel";
+  steerMount.add(steerWheel);
+
+  const wheelRimGeo = trackGeo(new THREE.TorusGeometry(0.165, 0.022, 8, 20));
+  const wheelRim = new THREE.Mesh(wheelRimGeo, trimMat);
+  steerWheel.add(wheelRim);
+
+  const spokeGeo = trackGeo(new THREE.BoxGeometry(0.30, 0.028, 0.02));
+  const spokeH = new THREE.Mesh(spokeGeo, accentMat);
+  steerWheel.add(spokeH);
+
+  const spokeVGeo = trackGeo(new THREE.BoxGeometry(0.028, 0.16, 0.02));
+  const spokeV = new THREE.Mesh(spokeVGeo, accentMat);
+  spokeV.position.y = -0.08;
+  steerWheel.add(spokeV);
+
+  const centerCapGeo = trackGeo(new THREE.CylinderGeometry(0.045, 0.045, 0.03, 10));
+  centerCapGeo.rotateX(Math.PI / 2);
+  const centerCap = new THREE.Mesh(centerCapGeo, accentMat);
+  steerWheel.add(centerCap);
+
+  // Angled Center Console Bezel at (0.0, 0.80, 0.74) oriented via lookAt(-0.25, 1.04, 0.08)
+  // while carRoot and jellyChassis are at identity origin!
+  const consoleBezel = new THREE.Group();
+  consoleBezel.name = "console-bezel";
+  consoleBezel.position.set(0.0, 0.80, 0.74);
+  consoleBezel.lookAt(-0.25, 1.04, 0.08);
+  jellyChassis.add(consoleBezel);
+
+  const bezelHousingGeo = trackGeo(new THREE.BoxGeometry(0.46, 0.17, 0.04));
+  const bezelHousing = new THREE.Mesh(bezelHousingGeo, trimMat);
+  consoleBezel.add(bezelHousing);
+
+  const screenGeo = trackGeo(new THREE.PlaneGeometry(0.42, 0.135));
+  const screenMat = trackMat(
+    new THREE.MeshBasicMaterial({
+      color: 0x0f172a,
+      side: THREE.FrontSide
+    })
+  );
+  const screenFace = new THREE.Mesh(screenGeo, screenMat);
+  screenFace.position.z = 0.022;
+  consoleBezel.add(screenFace);
+
+  const consoleAnchor = new THREE.Object3D();
+  consoleAnchor.name = "console-anchor";
+  consoleAnchor.position.set(0, 0, 0.025);
+  consoleBezel.add(consoleAnchor);
+
+  // --- 5. Exterior Illuminated Roof Ad Carrier on jellyChassis ---
+  const carrierGroup = new THREE.Group();
+  carrierGroup.name = "roof-carrier";
+  carrierGroup.position.set(0, roofTopY, -0.15);
+  jellyChassis.add(carrierGroup);
+
+  const strutGeo = trackGeo(new THREE.BoxGeometry(0.06, 0.18, 0.08));
+  for (const sx of [-0.46, 0.46]) {
+    for (const sz of [-0.22, 0.22]) {
+      const strut = new THREE.Mesh(strutGeo, trimMat);
+      strut.position.set(sx, 0.09, sz);
+      carrierGroup.add(strut);
+    }
+  }
+
+  const rackBarGeo = trackGeo(new THREE.BoxGeometry(1.12, 0.07, 0.62));
+  const rackBar = new THREE.Mesh(rackBarGeo, trimMat);
+  rackBar.position.set(0, 0.18, 0);
+  carrierGroup.add(rackBar);
+
+  const rackGlowGeo = trackGeo(new THREE.BoxGeometry(1.06, 0.04, 0.64));
+  const rackGlow = new THREE.Mesh(rackGlowGeo, roofLightMat);
+  rackGlow.position.set(0, 0.18, 0);
+  carrierGroup.add(rackGlow);
+
+  const roofAnchor = new THREE.Object3D();
+  roofAnchor.name = "roof-anchor";
+  roofAnchor.position.set(0, roofTopY + 0.34, -0.15);
+  jellyChassis.add(roofAnchor);
+
+  // Camera anchors on jellyChassis
+  const driverEyeAnchor = new THREE.Object3D();
+  driverEyeAnchor.name = "driver-eye-anchor";
+  driverEyeAnchor.position.set(-0.25, 1.04, 0.08);
+  jellyChassis.add(driverEyeAnchor);
+
+  const driverLookTarget = new THREE.Object3D();
+  driverLookTarget.name = "driver-look-target";
+  driverLookTarget.position.set(0, 0.92, 12.0);
+  jellyChassis.add(driverLookTarget);
+
+  const hoodAnchor = new THREE.Object3D();
+  hoodAnchor.name = "hood-anchor";
+  hoodAnchor.position.set(0, hoodTopY + 0.36, 0.95);
+  jellyChassis.add(hoodAnchor);
+
+  // --- 6. 4 Articulated Wheels Parented Directly to carRoot (NOT squashed by jellyChassis!) ---
+  const wheelWidth = isBuggy ? 0.34 : 0.28;
+  const frontWheelZ = def.wheelBase * 0.5;
+  const rearWheelZ = -def.wheelBase * 0.5;
+  const trackHalfW = w * 0.5 - 0.08;
+
+  const frontLeftSteer = new THREE.Group();
+  frontLeftSteer.name = "frontLeftSteer";
+  frontLeftSteer.position.set(trackHalfW, rWheel, frontWheelZ);
+  carRoot.add(frontLeftSteer);
+  const frontLeftSpin = makeWheelAssembly(rWheel, wheelWidth, def.accent, trackGeo, trackMat);
+  frontLeftSteer.add(frontLeftSpin);
+
+  const frontRightSteer = new THREE.Group();
+  frontRightSteer.name = "frontRightSteer";
+  frontRightSteer.position.set(-trackHalfW, rWheel, frontWheelZ);
+  carRoot.add(frontRightSteer);
+  const frontRightSpin = makeWheelAssembly(rWheel, wheelWidth, def.accent, trackGeo, trackMat);
+  frontRightSteer.add(frontRightSpin);
+
+  const rearLeftSpin = makeWheelAssembly(rWheel, wheelWidth * 1.08, def.accent, trackGeo, trackMat);
+  rearLeftSpin.position.set(trackHalfW, rWheel, rearWheelZ);
+  carRoot.add(rearLeftSpin);
+
+  const rearRightSpin = makeWheelAssembly(rWheel, wheelWidth * 1.08, def.accent, trackGeo, trackMat);
+  rearRightSpin.position.set(-trackHalfW, rWheel, rearWheelZ);
+  carRoot.add(rearRightSpin);
+
+  const wheels = {
+    frontLeftSteer,
+    frontRightSteer,
+    frontLeftSpin,
+    frontRightSpin,
+    rearLeftSpin,
+    rearRightSpin,
+    all: [frontLeftSpin, frontRightSpin, rearLeftSpin, rearRightSpin]
+  };
+
+  function updateVisuals({ steerInput = 0, wheelSpin = 0, cameraMode = "CHASE" } = {}) {
+    const steerClamped = Number.isFinite(steerInput)
+      ? Math.max(-1, Math.min(1, steerInput))
+      : 0;
+    const spinDelta = Number.isFinite(wheelSpin) ? wheelSpin : 0;
+
+    frontLeftSteer.rotation.y = steerClamped * 0.45;
+    frontRightSteer.rotation.y = steerClamped * 0.45;
+
+    for (let i = 0; i < wheels.all.length; i++) {
+      wheels.all[i].rotation.x += spinDelta;
+    }
+
+    steerWheel.rotation.z = -steerClamped * 1.15;
+
+    if (driverHead) {
+      driverHead.visible = cameraMode !== "DRIVER";
+    }
+  }
+
+  function dispose() {
+    if (carRoot.parent) {
+      carRoot.parent.remove(carRoot);
+    }
+    for (let i = 0; i < disposables.length; i++) {
+      const d = disposables[i];
+      if (d && typeof d.dispose === "function") {
+        try {
+          d.dispose();
+        } catch (_) {
+          // ignore
+        }
+      }
+    }
+  }
+
+  if (options && options.cameraMode) {
+    updateVisuals({ cameraMode: options.cameraMode });
+  }
+
+  return {
+    def,
+    carRoot,
+    jellyChassis,
+    group: carRoot,
+    body,
+    cabin,
+    wheels,
+    steerWheel,
+    driverHead,
+    consoleBezel,
+    roofAnchor,
+    consoleAnchor,
+    driverEyeAnchor,
+    driverLookTarget,
+    hoodAnchor,
+    updateVisuals,
+    dispose
+  };
+}

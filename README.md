@@ -19,6 +19,60 @@ Kotfolio is a minimalistic and clean portfolio project built with [Kobweb](https
 - **Kotlin Multi-Platform:** Leverages the power of Kotlin for both front-end and back-end development.
 
 
+## Jelly Drift 3D
+
+Kotfolio includes an integrated WebGL racing game at the `/drift` route. Built with a custom JavaScript 3D engine (Three.js) and orchestrated through Kobweb's Compose HTML bridge, it features creative Google AdSense placements woven into the gameplay experience.
+
+### Gameplay
+- **4 Cars**: `jelly_gt`, `tofu_86`, `bumble_buggy`, `cobalt_hyper` — each with unique stats (top speed, acceleration, drift factor, bounce)
+- **3 Tracks**: Circuit layouts with trackside billboards and gantry anchors for dynamic ad placement
+- **2 Modes**: 
+  - *Drift Rush* — Time-trial drifting challenges
+  - *Grand Prix* — Multi-lap racing against AI opponents
+
+### Controls
+| Input | Action |
+|-------|--------|
+| `W` / `↑` | Accelerate |
+| `S` / `↓` | Brake/Reverse |
+| `A` / `←` | Steer Left |
+| `D` / `→` | Steer Right |
+| `Space` | Handbrake Drift |
+| `C` | Toggle Camera (3rd-person / Hood) |
+| `V` | Toggle Hood View |
+| `Esc` | Pause Menu |
+
+### Creative Ad Placements
+The game integrates Google AdSense through multiple contextual placements:
+- **Driver Center-Console Ad**: In-car dashboard display visible during gameplay
+- **3rd-Person Moving Roof Ad**: Billboard mounted on the car's roof, visible in chase camera
+- **Watch-an-Ad-to-Continue**: Interstitial ad between laps/sessions
+- **Trackside Billboards**: Dynamic 3D meshes along track boundaries (`billboardMeshes`)
+- **Garage & Podium Banners**: Static banners in menu screens
+
+### Ad Testing Overrides
+For local development and E2E testing, use URL query parameters:
+```bash
+/drift?adtest=on                    # Force test ads from Google
+/drift?adslot_console=<slot_id>     # Override console ad slot
+/drift?adslot_roof=<slot_id>        # Override roof ad slot
+/drift?adslot_billboard=<slot_id>   # Override billboard ad slots
+```
+
+### Local Run & Test Commands
+```bash
+# Start dev server with game
+cd site && kobweb run
+# Open http://localhost:8080/drift in browser
+
+# Static export (for E2E testing)
+./gradlew :site:kobwebExport
+# Exported to site/.kobweb/site/
+
+# Run full E2E test suite (Headless Chrome CDP)
+python e2e/run_e2e.py --tier all --workers 2
+```
+
 ## Tech Stack
 
 - **[Kobweb](https://github.com/varabyte/kobweb):** Compose HTML framework for Kotlin multi-platform.

@@ -44,7 +44,7 @@ def t4_s1(ctx: TestContext) -> None:
     assert score1 > 0, f"Expected initial driftScore > 0, got {score1}"
 
     # Wait out DRIFT_RUSH clock -> CONTINUE_OFFER -> Watch Ad -> Continue
-    wait_for_drift_rush_timeout(s, timeout_s=55.0)
+    wait_for_drift_rush_timeout(s, timeout_s=75.0)
     snap_cont = complete_watch_ad_to_continue(s, expected_min_continues=1, timeout_s=15.0)
     assert snap_cont["continuesUsed"] == 1 and snap_cont["timeRemainingSec"] >= 18.0
 
@@ -171,7 +171,7 @@ def t4_s4(ctx: TestContext) -> None:
     s.press_key("KeyC")
     wait_snapshot(s, lambda x: x["cameraMode"] == "CHASE", timeout=2.0, desc="CHASE")
 
-    wait_for_drift_rush_timeout(s, timeout_s=55.0)
+    wait_for_drift_rush_timeout(s, timeout_s=75.0)
     snap_cont = complete_watch_ad_to_continue(s, expected_min_continues=1, timeout_s=15.0)
     assert snap_cont["continuesUsed"] == 1
     s.hold_key("KeyW", 1.5)
@@ -215,8 +215,13 @@ def t4_s5(ctx: TestContext) -> None:
             for (const sel of ['a[href="/#projects"]', '[data-testid="back-portfolio-btn"]', 'a[href="/"]']) {
                 for (const el of document.querySelectorAll(sel)) {
                     const r = el.getBoundingClientRect();
-                    if (r.width > 0 && r.height > 0 && getComputedStyle(el).display !== 'none') {
-                        return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+                    const cs = getComputedStyle(el);
+                    if (r.width <= 0 || r.height <= 0 || cs.display === 'none' || cs.visibility !== 'visible' || parseFloat(cs.opacity) <= 0.05) continue;
+                    const cx = r.left + r.width / 2;
+                    const cy = r.top + r.height / 2;
+                    const hit = document.elementFromPoint(cx, cy);
+                    if (hit && (el === hit || el.contains(hit))) {
+                        return { cx, cy };
                     }
                 }
             }

@@ -3,6 +3,7 @@
 
     var PUBLISHER_ID = "ca-pub-2255472474228401";
     var H5_REWARD_TIMEOUT_MS = 1800;
+    var H5_SHOW_TIMEOUT_MS = 15000;
     var PENDING_SETTLE_TIMEOUT_MS = 2500;
 
     var DEFAULT_SLOTS = {
@@ -48,6 +49,15 @@
         return typeof slotId === "string" && /^\d{6,16}$/.test(slotId) && !PLACEHOLDER_IDS[slotId];
     }
 
+    function isKobwebExporting() {
+        try {
+            var search = (window.location && window.location.search) ? window.location.search : "";
+            return search.indexOf("_kobwebIsExporting=true") !== -1;
+        } catch (_) {
+            return false;
+        }
+    }
+
     function isLocalHost(hostname) {
         if (!hostname) return false;
         var host = String(hostname).toLowerCase();
@@ -80,6 +90,9 @@
         }
         if (typeof existing.h5RewardTimeoutMs === "number" && existing.h5RewardTimeoutMs > 0) {
             out.h5RewardTimeoutMs = existing.h5RewardTimeoutMs;
+        }
+        if (typeof existing.h5ShowTimeoutMs === "number" && existing.h5ShowTimeoutMs > 0) {
+            out.h5ShowTimeoutMs = existing.h5ShowTimeoutMs;
         }
         return out;
     }
@@ -125,9 +138,12 @@
 
     function getConfig() {
         var query = parseQueryOverrides();
-        var defaultTestMode = typeof hostOverrides.testMode === "boolean"
-            ? hostOverrides.testMode
-            : isLocalHost(window.location && window.location.hostname);
+        var exporting = isKobwebExporting();
+        var defaultTestMode = exporting
+            ? false
+            : (typeof hostOverrides.testMode === "boolean"
+                ? hostOverrides.testMode
+                : isLocalHost(window.location && window.location.hostname));
 
         var config = {
             publisherId: PUBLISHER_ID,
@@ -136,11 +152,14 @@
             continueSlotId: query.continueSlotId || hostOverrides.continueSlotId || DEFAULT_SLOTS.continueSlotId,
             garageSlotId: query.garageSlotId || hostOverrides.garageSlotId || DEFAULT_SLOTS.garageSlotId,
             podiumSlotId: query.podiumSlotId || hostOverrides.podiumSlotId || DEFAULT_SLOTS.podiumSlotId,
-            testMode: typeof query.testMode === "boolean" ? query.testMode : defaultTestMode,
+            testMode: exporting ? false : (typeof query.testMode === "boolean" ? query.testMode : defaultTestMode),
             allowPlaceholderPush: hostOverrides.allowPlaceholderPush === true,
             h5RewardTimeoutMs: typeof hostOverrides.h5RewardTimeoutMs === "number"
                 ? hostOverrides.h5RewardTimeoutMs
-                : H5_REWARD_TIMEOUT_MS
+                : H5_REWARD_TIMEOUT_MS,
+            h5ShowTimeoutMs: typeof hostOverrides.h5ShowTimeoutMs === "number"
+                ? hostOverrides.h5ShowTimeoutMs
+                : H5_SHOW_TIMEOUT_MS
         };
 
         window.COVFOLIO_AD_CONFIG = config;
@@ -302,12 +321,17 @@
 
             insElement.setAttribute("data-ad-client", cfg.publisherId);
             insElement.setAttribute("data-ad-slot", slotId);
-            if (cfg.testMode === true) {
+            if (cfg.testMode === true && !isKobwebExporting()) {
                 insElement.setAttribute("data-adtest", "on");
             } else {
                 insElement.removeAttribute("data-adtest");
             }
 
+            if (isKobwebExporting()) {
+                return { pushed: false, status: "idle" };
+            }
+
+            attachAdSenseScriptErrorListener();
             var entry = attachSlotObserver(insElement, onStatusChange);
 
             if (isElementHiddenOrZeroWidth(insElement)) {
@@ -389,11 +413,31 @@
         }
     }
 
+    var boundErrorScripts = typeof WeakSet === "function" ? new WeakSet() : null;
+    var boundErrorScriptsFallback = [];
+
+    function isErrorListenerBound(script) {
+        if (!script) return false;
+        if (boundErrorScripts) {
+            return boundErrorScripts.has(script);
+        }
+        return boundErrorScriptsFallback.indexOf(script) !== -1;
+    }
+
+    function markErrorListenerBound(script) {
+        if (!script) return;
+        if (boundErrorScripts) {
+            boundErrorScripts.add(script);
+        } else if (boundErrorScriptsFallback.indexOf(script) === -1) {
+            boundErrorScriptsFallback.push(script);
+        }
+    }
+
     function attachAdSenseScriptErrorListener() {
         try {
             var script = document.querySelector('script[src*="pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"]');
-            if (script && !script.dataset.covfolioErrorBound) {
-                script.dataset.covfolioErrorBound = "1";
+            if (script && !isErrorListenerBound(script)) {
+                markErrorListenerBound(script);
                 script.addEventListener("error", function () {
                     markPendingSlotsBlocked();
                 });
@@ -411,9 +455,15 @@
         var muted = Boolean(options.muted);
 
         var cfg = getConfig();
-        var timeoutMs = cfg.h5RewardTimeoutMs || H5_REWARD_TIMEOUT_MS;
+        var timeoutMs = (typeof options.timeoutMs === "number" && options.timeoutMs > 0)
+            ? options.timeoutMs
+            : (cfg.h5RewardTimeoutMs || H5_REWARD_TIMEOUT_MS);
+        var showTimeoutMs = (typeof options.showTimeoutMs === "number" && options.showTimeoutMs > 0)
+            ? options.showTimeoutMs
+            : (cfg.h5ShowTimeoutMs || H5_SHOW_TIMEOUT_MS);
         var settled = false;
         var timeoutId = null;
+        var showTimeoutId = null;
 
         function settle(fn, arg) {
             if (settled) return;
@@ -421,6 +471,10 @@
             if (timeoutId !== null) {
                 clearTimeout(timeoutId);
                 timeoutId = null;
+            }
+            if (showTimeoutId !== null) {
+                clearTimeout(showTimeoutId);
+                showTimeoutId = null;
             }
             try {
                 fn(arg);
@@ -459,6 +513,9 @@
                         timeoutId = null;
                     }
                     if (!settled && typeof showAdFn === "function") {
+                        showTimeoutId = setTimeout(function () {
+                            settle(onReadyFallback, "timeout");
+                        }, showTimeoutMs);
                         try {
                             showAdFn();
                         } catch (_) {

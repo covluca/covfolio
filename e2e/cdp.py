@@ -66,6 +66,8 @@ def _is_known_external_ad_url(url: str) -> bool:
         or host.endswith(".doubleclick.net")
         or host == "googleadservices.com"
         or host.endswith(".googleadservices.com")
+        or host == "adtrafficquality.google"
+        or host.endswith(".adtrafficquality.google")
     )
 
 
@@ -106,6 +108,7 @@ class CDPSession:
         self.log_errors: list[dict[str, Any]] = []
         self.failed_requests: list[dict[str, Any]] = []
         self.blocked_ad_requests: list[dict[str, Any]] = []
+        self.external_ad_warnings: list[dict[str, Any]] = []
         self.bad_http_responses: list[dict[str, Any]] = []
         self._closed = False
 
@@ -133,13 +136,14 @@ class CDPSession:
                 resp = params.get("response", {})
                 status = int(resp.get("status", 200))
                 url = resp.get("url", "")
-                if status >= 400 and ("127.0.0.1" in url or "localhost" in url):
+                if status >= 400 and _is_local_url(url):
                     self.bad_http_responses.append({"url": url, "status": status})
             elif method == "Network.loadingFailed":
                 req_id = params.get("requestId", "")
                 url = self._requests_by_id.get(req_id, "")
                 blocked_reason = params.get("blockedReason", "")
-                is_local = ("127.0.0.1" in url) or ("localhost" in url)
+                is_local = _is_local_url(url)
+                is_known_ad = _is_known_external_ad_url(url)
                 is_expected_block = (
                     blocked_reason == "inspector"
                     and _matches_any_pattern(url, self._blocked_patterns)
@@ -153,8 +157,12 @@ class CDPSession:
                 }
                 if is_expected_block:
                     self.blocked_ad_requests.append(entry)
+                elif is_known_ad:
+                    # Offline/firewalled host compatibility (ORIGINAL_REQUEST R3):
+                    # third-party AdSense/DoubleClick network failures are non-fatal warnings.
+                    self.external_ad_warnings.append(entry)
                 elif is_local or not _matches_any_pattern(url, self._blocked_patterns):
-                    # Ignore cancelled requests caused by rapid SPA navigation/aborts only if errorText == net::ERR_ABORTED on external ads
+                    # Ignore cancelled requests caused by rapid SPA navigation/aborts only if errorText == net::ERR_ABORTED on non-local URLs
                     if params.get("errorText") == "net::ERR_ABORTED" and not is_local:
                         pass
                     else:
@@ -176,12 +184,26 @@ class CDPSession:
                 if entry.get("level") == "error":
                     url = entry.get("url", "")
                     source = entry.get("source", "")
+                    text = entry.get("text", "")
+                    is_local = _is_local_url(url)
                     is_expected_block = (
                         source == "network"
-                        and _matches_any_pattern(url, self._blocked_patterns)
-                        and ("127.0.0.1" not in url and "localhost" not in url)
+                        and not is_local
+                        and (_matches_any_pattern(url, self._blocked_patterns) or _is_known_external_ad_url(url))
                     )
-                    if not is_expected_block:
+                    is_external_ad_intervention = (
+                        source == "intervention"
+                        and any(
+                            dom in text
+                            for dom in (
+                                "adtrafficquality.google",
+                                "googlesyndication.com",
+                                "doubleclick.net",
+                                "googleadservices.com",
+                            )
+                        )
+                    )
+                    if not is_expected_block and not is_external_ad_intervention:
                         self.log_errors.append(entry)
 
             q = self._event_queues.get(method)
@@ -200,6 +222,7 @@ class CDPSession:
             self.console_errors.clear()
             self.log_errors.clear()
             self.failed_requests.clear()
+            self.external_ad_warnings.clear()
             self.bad_http_responses.clear()
 
     def get_fatal_errors(self) -> list[str]:

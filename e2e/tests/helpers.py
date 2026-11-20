@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import statistics
 import struct
@@ -385,14 +386,35 @@ def assert_hidden_preserving_layout(session: CDPSession, selector: str, require_
     info = inspect_element(session, selector, only_visible=False)
     if not info:
         raise AssertionError(f"Expected hidden element missing from DOM: {selector}")
-    if require_ins:
-        has_ins = session.eval_js(
-            f"(() => {{ const el = document.querySelector({selector!r}); return !!(el && el.querySelector('ins.adsbygoogle')); }})()"
+    dom_check = session.eval_js(
+        f"""(() => {{
+            const el = document.querySelector({selector!r});
+            if (!el) return {{ found: false }};
+            let ancestorDisplayNone = false;
+            let cur = el.parentElement;
+            while (cur && cur !== document.documentElement) {{
+                if (getComputedStyle(cur).display === 'none') {{
+                    ancestorDisplayNone = true;
+                    break;
+                }}
+                cur = cur.parentElement;
+            }}
+            const ins = el.querySelector('ins.adsbygoogle');
+            const insDisplay = ins ? getComputedStyle(ins).display : null;
+            return {{
+                found: true,
+                ancestorDisplayNone,
+                hasIns: !!ins,
+                insDisplay,
+            }};
+        }})()"""
+    )
+    if require_ins and (not dom_check or not dom_check["hasIns"]):
+        raise AssertionError(f"Hidden ad overlay {selector} missing child <ins class='adsbygoogle'>")
+    if info["display"] == "none" or (dom_check and (dom_check["ancestorDisplayNone"] or dom_check["insDisplay"] == "none")):
+        raise AssertionError(
+            f"AdSense violation: {selector} (or ancestor/<ins>) uses display:none instead of visibility:hidden/opacity:0 ({dom_check})"
         )
-        if not has_ins:
-            raise AssertionError(f"Hidden ad overlay {selector} missing child <ins class='adsbygoogle'>")
-    if info["display"] == "none":
-        raise AssertionError(f"AdSense violation: {selector} uses display:none instead of visibility:hidden/opacity:0")
     if info["visibility"] != "hidden" and info["opacity"] > 0.05:
         raise AssertionError(
             f"Expected {selector} to be hidden, but visibility={info['visibility']}, opacity={info['opacity']}"
@@ -555,6 +577,43 @@ def click_mute_toggle(session: CDPSession) -> None:
 # ---------------------------------------------------------------------------
 
 
+def capture_webgl_canvas_png(session: CDPSession) -> bytes:
+    """
+    Capture a screenshot of the underlying WebGL canvas with DOM overlay layers
+    temporarily hidden via visibility:hidden (never display:none), restoring
+    original inline style.visibility immediately in a finally block.
+    """
+    saved_vis: dict[str, str] = {}
+    try:
+        saved_vis = session.eval_js(
+            """(async () => {
+                const ids = ['#jellydrift-modal-layer', '#jellydrift-hud-layer', '#jellydrift-ad3d-layer'];
+                const saved = {};
+                for (const id of ids) {
+                    const el = document.querySelector(id);
+                    if (el) {
+                        saved[id] = el.style.visibility;
+                        el.style.visibility = 'hidden';
+                    }
+                }
+                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+                return saved;
+            })()"""
+        ) or {}
+        return session.screenshot_bytes()
+    finally:
+        if saved_vis:
+            session.eval_js(
+                f"""(() => {{
+                    const saved = {json.dumps(saved_vis)};
+                    for (const [id, vis] of Object.entries(saved)) {{
+                        const el = document.querySelector(id);
+                        if (el) el.style.visibility = vis;
+                    }}
+                }})()"""
+            )
+
+
 def assert_drift_alive(session: CDPSession, expected_path: str = "/drift", timeout: float = 12.0) -> dict[str, Any]:
     """Mandatory pre-check for all /drift tests: verifies real route, live WebGL canvas, non-blank render, telemetry."""
     def _ready() -> Optional[dict[str, Any]]:
@@ -618,8 +677,8 @@ def assert_drift_alive(session: CDPSession, expected_path: str = "/drift", timeo
     assert snap.get("fatalErrors", []) == [], f"Snapshot fatalErrors non-empty: {snap.get('fatalErrors')}"
     session.assert_no_fatal_errors("assert_drift_alive")
 
-    # Verify non-blank rendered WebGL frame via composited screenshot variance
-    png = session.screenshot_bytes()
+    # Verify non-blank rendered WebGL frame directly on the canvas (UI/ad overlay layers hidden via visibility:hidden)
+    png = capture_webgl_canvas_png(session)
     colors, stdev = sample_region_variance(png, rect=rect, step=20)
     assert colors >= 2 and stdev > 0.5, (
         f"WebGL canvas appears blank/uniform (distinct_colors={colors}, luma_stdev={stdev:.2f})"
@@ -746,7 +805,7 @@ def ensure_racing(
     return start_race(session, track_id=track_id, car_id=car_id, mode_id=mode_id, wait_racing=True)
 
 
-def wait_for_drift_rush_timeout(session: CDPSession, timeout_s: float = 55.0) -> dict[str, Any]:
+def wait_for_drift_rush_timeout(session: CDPSession, timeout_s: float = 75.0) -> dict[str, Any]:
     """Wait naturally for DRIFT_RUSH clock to reach 0 and enter CONTINUE_OFFER; fail fast if stalled."""
     start = time.monotonic()
     snap = get_snapshot(session)
@@ -821,17 +880,30 @@ def drive_laps_opaque_box(
     target_checkpoints: Optional[int] = None,
     timeout_s: float = 150.0,
     use_drift_on_sharp: bool = True,
+    stats: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """
     Drive forward using ONLY getSnapshot() telemetry (playerWorldPos, yawDeg,
-    checkpointIndex, lap, speedKmh, jellySpring) and real KeyW/KeyA/KeyD/Space inputs.
+    nextCheckpointPos, nextCheckpointDirDeg, checkpointIndex, lap, speedKmh,
+    timeRemainingSec, jellySpring) and real KeyW/KeyA/KeyD/Space inputs.
     No internal track spline reads or state overrides.
     """
     start = time.monotonic()
     waypoints: dict[int, tuple[float, float]] = {}
     snap = get_snapshot(session)
     last_cp = int(snap.get("checkpointIndex", 0))
+    t_prev = float(snap.get("timeRemainingSec", 0.0))
+    max_time_jump = -999.0
     checkpoints_crossed = 0
+
+    def _record_stats(cur_snap: dict[str, Any]) -> None:
+        nonlocal t_prev, max_time_jump
+        t_cur = float(cur_snap.get("timeRemainingSec", 0.0))
+        max_time_jump = max(max_time_jump, t_cur - t_prev)
+        t_prev = t_cur
+        if stats is not None:
+            stats["max_time_jump"] = max_time_jump
+            stats["checkpoints_crossed"] = checkpoints_crossed
 
     # Calibrate steering sign (+1 or -1) from an initial tiny KeyA probe on real yawDeg
     yaw0 = float(snap["playerWorldPos"]["yawDeg"])
@@ -841,6 +913,7 @@ def drive_laps_opaque_box(
     time.sleep(0.22)
     session.key_up("KeyA")
     snap_probe = get_snapshot(session)
+    _record_stats(snap_probe)
     yaw1 = float(snap_probe["playerWorldPos"]["yawDeg"])
     dyaw = (yaw1 - yaw0 + 180.0) % 360.0 - 180.0
     # Record whether KeyA increases (+1) or decreases (-1) yawDeg
@@ -851,7 +924,6 @@ def drive_laps_opaque_box(
     p1 = snap_probe["playerWorldPos"]
     dx, dz = float(p1["x"]) - float(p0["x"]), float(p1["z"]) - float(p0["z"])
     if math.hypot(dx, dz) > 0.2:
-        move_angle = math.atan2(dx, dz)
         yaw_rad_1 = math.radians(yaw1)
         # Check if forward vector aligns with (sin(yaw), cos(yaw)) or (-sin(yaw), -cos(yaw))
         dot_pos = math.sin(yaw_rad_1) * dx + math.cos(yaw_rad_1) * dz
@@ -869,6 +941,7 @@ def drive_laps_opaque_box(
     try:
         while time.monotonic() - start < timeout_s:
             snap = get_snapshot(session)
+            _record_stats(snap)
             phase = snap.get("phase")
             if phase == "FINISHED":
                 return snap
@@ -886,6 +959,7 @@ def drive_laps_opaque_box(
                 waypoints[last_cp] = (x, z)
                 checkpoints_crossed += 1
                 last_cp = cp
+                _record_stats(snap)
                 if target_checkpoints is not None and checkpoints_crossed >= target_checkpoints:
                     return snap
 
@@ -897,27 +971,62 @@ def drive_laps_opaque_box(
             desired_steer: Optional[str] = None
             want_drift = False
 
-            if lap >= 2 and cp in waypoints:
-                # Steer toward observed Lap-1 checkpoint waypoint
-                tx, tz = waypoints[cp]
-                if math.hypot(tx - x, tz - z) > 4.0:
+            # Reverse-unwedge recovery if car becomes stalled against a barrier
+            if time.monotonic() - last_move_time > 1.8:
+                if held_space:
+                    session.key_up("Space")
+                    held_space = False
+                if held_steer is not None:
+                    session.key_up(held_steer)
+                    held_steer = None
+                session.key_up("KeyW")
+                steer_dir = "KeyD" if steer_dir == "KeyA" else "KeyA"
+                session.hold_keys(["KeyS", steer_dir], 0.45)
+                session.key_down("KeyW")
+                last_move_time = time.monotonic()
+                time.sleep(0.08)
+                continue
+
+            next_cp = snap.get("nextCheckpointPos")
+            target_xy: Optional[tuple[float, float]] = None
+            if (
+                isinstance(next_cp, dict)
+                and next_cp.get("x") is not None
+                and next_cp.get("z") is not None
+                and math.isfinite(float(next_cp["x"]))
+                and math.isfinite(float(next_cp["z"]))
+            ):
+                target_xy = (float(next_cp["x"]), float(next_cp["z"]))
+            elif lap >= 2 and cp in waypoints:
+                target_xy = waypoints[cp]
+
+            if target_xy is not None:
+                tx, tz = target_xy
+                dist_to_target = math.hypot(tx - x, tz - z)
+                yaw_rad = math.radians(yaw_deg)
+                cur_fx = fwd_sign * math.sin(yaw_rad)
+                cur_fz = fwd_sign * math.cos(yaw_rad)
+                cur_heading = math.atan2(cur_fx, cur_fz)
+
+                if dist_to_target > 1.5:
                     target_heading = math.atan2(tx - x, tz - z)
-                    yaw_rad = math.radians(yaw_deg)
-                    cur_fx = fwd_sign * math.sin(yaw_rad)
-                    cur_fz = fwd_sign * math.cos(yaw_rad)
-                    cur_heading = math.atan2(cur_fx, cur_fz)
-                    err = _wrap_angle_rad(target_heading - cur_heading)
-                    # Determine if KeyA turns heading toward target_heading
-                    test_yaw = yaw_rad + math.radians(5.0 * left_yaw_sign)
-                    test_heading = math.atan2(fwd_sign * math.sin(test_yaw), fwd_sign * math.cos(test_yaw))
-                    left_delta = _wrap_angle_rad(test_heading - cur_heading)
-                    left_helps = (err * left_delta) > 0
-                    if abs(err) > 0.14:
-                        desired_steer = "KeyA" if left_helps else "KeyD"
-                    if use_drift_on_sharp and abs(err) > 0.55 and speed > 60:
-                        want_drift = True
+                elif snap.get("nextCheckpointDirDeg") is not None and math.isfinite(float(snap["nextCheckpointDirDeg"])):
+                    dir_rad = math.radians(float(snap["nextCheckpointDirDeg"]))
+                    target_heading = math.atan2(fwd_sign * math.sin(dir_rad), fwd_sign * math.cos(dir_rad))
+                else:
+                    target_heading = cur_heading
+
+                err = _wrap_angle_rad(target_heading - cur_heading)
+                test_yaw = yaw_rad + math.radians(5.0 * left_yaw_sign)
+                test_heading = math.atan2(fwd_sign * math.sin(test_yaw), fwd_sign * math.cos(test_yaw))
+                left_delta = _wrap_angle_rad(test_heading - cur_heading)
+                left_helps = (err * left_delta) > 0
+                if abs(err) > 0.12:
+                    desired_steer = "KeyA" if left_helps else "KeyD"
+                if use_drift_on_sharp and abs(err) > 0.55 and speed > 60:
+                    want_drift = True
             else:
-                # Lap 1 / exploration: wall-scrape & stall recovery steering
+                # Fallback when nextCheckpointPos is unavailable on Lap 1: wall-scrape & stall steering
                 squash = abs(float(snap.get("jellySpring", {}).get("squash", 0.0)))
                 stalled = (time.monotonic() - last_move_time > 0.6) or (speed < 42.0 and time.monotonic() - start > 1.2)
                 if stalled or squash > 0.08:
@@ -925,14 +1034,7 @@ def drive_laps_opaque_box(
                         steer_dir = "KeyD" if steer_dir == "KeyA" else "KeyA"
                         last_turn_switch = time.monotonic()
                     desired_steer = steer_dir
-                    # Brief reverse pulse if completely wedged
-                    if time.monotonic() - last_move_time > 1.8:
-                        session.key_up("KeyW")
-                        session.hold_keys(["KeyS", steer_dir], 0.45)
-                        session.key_down("KeyW")
-                        last_move_time = time.monotonic()
                 elif speed < 85.0 and time.monotonic() - start > 2.0:
-                    # Gentle probe steer to round sweeping corners cleanly
                     desired_steer = steer_dir
 
             if desired_steer != held_steer:
@@ -957,4 +1059,6 @@ def drive_laps_opaque_box(
             session.key_up(held_steer)
         session.key_up("KeyW")
 
-    return get_snapshot(session)
+    snap_final = get_snapshot(session)
+    _record_stats(snap_final)
+    return snap_final

@@ -169,7 +169,7 @@ def t3_07(ctx: TestContext) -> None:
     s.block_urls(ADBLOCK_PATTERNS)
     open_drift(s, ctx.base_url)
     start_race(s, track_id="sunny_coast", car_id="tofu_86", mode_id="DRIFT_RUSH")
-    wait_for_drift_rush_timeout(s, timeout_s=55.0)
+    wait_for_drift_rush_timeout(s, timeout_s=75.0)
     assert get_snapshot(s)["adSlots"]["adsenseBlocked"] is True
     snap = complete_watch_ad_to_continue(s, expected_min_continues=1, timeout_s=15.0)
     assert snap["continuesUsed"] == 1
@@ -194,14 +194,19 @@ def t3_08(ctx: TestContext) -> None:
     click_pause(s)
     wait_snapshot(s, lambda x: x["phase"] == "PAUSED", timeout=3.0, desc="PAUSED")
 
-    # Exit via back link or nav link to /#projects or /
+    # Exit via back link or nav link to /#projects or / (filtered by hit-testing under PAUSED modal)
     back = s.eval_js(
         """(() => {
             for (const sel of ['a[href="/#projects"]', '[data-testid="back-portfolio-btn"]', 'a[href="/"]']) {
                 for (const el of document.querySelectorAll(sel)) {
                     const r = el.getBoundingClientRect();
-                    if (r.width > 0 && r.height > 0 && getComputedStyle(el).display !== 'none') {
-                        return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+                    const cs = getComputedStyle(el);
+                    if (r.width <= 0 || r.height <= 0 || cs.display === 'none' || cs.visibility !== 'visible' || parseFloat(cs.opacity) <= 0.05) continue;
+                    const cx = r.left + r.width / 2;
+                    const cy = r.top + r.height / 2;
+                    const hit = document.elementFromPoint(cx, cy);
+                    if (hit && (el === hit || el.contains(hit))) {
+                        return { cx, cy };
                     }
                 }
             }

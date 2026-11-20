@@ -32,11 +32,19 @@ kobweb {
                 script {
                     unsafe {
                         +"""
+                        var __covfolioIsExporting = false;
+                        try {
+                            if (window.location) {
+                                if (window.location.search) {
+                                    __covfolioIsExporting = new URLSearchParams(window.location.search).get("_kobwebIsExporting") === "true";
+                                }
+                            }
+                        } catch (e) {}
                         window.__adsenseBlocked = window.__adsenseBlocked === true ? true : false;
                         window.__adsenseLoaded = window.__adsenseLoaded === true ? true : false;
                         window.adsbygoogle = window.adsbygoogle || [];
-                        window.adBreak = window.adBreak || function(o) { window.adsbygoogle.push(o); };
-                        window.adConfig = window.adConfig || function(o) { window.adsbygoogle.push(o); };
+                        window.adBreak = window.adBreak || function(o) { if (!__covfolioIsExporting) { window.adsbygoogle.push(o); } };
+                        window.adConfig = window.adConfig || function(o) { if (!__covfolioIsExporting) { window.adsbygoogle.push(o); } };
                         """.trimIndent()
                     }
                 }
@@ -51,6 +59,70 @@ kobweb {
                     attributes["onload"] = "window.__adsenseLoaded = true;"
                 }
             }
+        }
+    }
+}
+
+tasks.matching { it.name == "kobwebExport" }.configureEach {
+    doLast {
+        val exportDir = layout.projectDirectory.dir(".kobweb/site").asFile
+        if (exportDir.exists()) {
+            val showAdsScriptRegex = Regex(
+                """\s*<script[^>]+(?:show_ads_impl|pagead/managed/js/adsense)[^>]*>\s*</script>""",
+                RegexOption.IGNORE_CASE
+            )
+            val showAdsLinkRegex = Regex(
+                """\s*<link[^>]+(?:show_ads_impl|pagead/managed/js/adsense)[^>]*>""",
+                RegexOption.IGNORE_CASE
+            )
+            val originTrialMetaRegex = Regex(
+                """\s*<meta[^>]+http-equiv=["']origin-trial["'][^>]*>""",
+                RegexOption.IGNORE_CASE
+            )
+            val checkedHeadAttrRegex = Regex(
+                """\s+data-checked-head=["'][^"']*["']""",
+                RegexOption.IGNORE_CASE
+            )
+            val errorBoundAttrRegex = Regex(
+                """\s+data-covfolio-error-bound=["'][^"']*["']""",
+                RegexOption.IGNORE_CASE
+            )
+            val noAblateInsRegex = Regex(
+                """\s*<ins\b[^>]*\badsbygoogle-noablate\b[^>]*>[\s\S]*?</ins>""",
+                RegexOption.IGNORE_CASE
+            )
+            val aswiftHostRegex = Regex(
+                """\s*<div\b[^>]*\bid=["']aswift_\d+_host["'][^>]*>[\s\S]*?</div>""",
+                RegexOption.IGNORE_CASE
+            )
+            val aswiftIframeRegex = Regex(
+                """\s*<iframe\b[^>]*\bid=["']aswift_\d+["'][^>]*>[\s\S]*?</iframe>""",
+                RegexOption.IGNORE_CASE
+            )
+            val googleEsfRegex = Regex(
+                """\s*<iframe\b[^>]*\bid=["']google_esf["'][^>]*>[\s\S]*?</iframe>""",
+                RegexOption.IGNORE_CASE
+            )
+
+            exportDir.walkTopDown()
+                .filter { it.isFile && it.extension.equals("html", ignoreCase = true) }
+                .forEach { htmlFile ->
+                    val original = htmlFile.readText(Charsets.UTF_8)
+                    var cleaned = original
+                    cleaned = showAdsScriptRegex.replace(cleaned, "")
+                    cleaned = showAdsLinkRegex.replace(cleaned, "")
+                    cleaned = originTrialMetaRegex.replace(cleaned, "")
+                    cleaned = checkedHeadAttrRegex.replace(cleaned, "")
+                    cleaned = errorBoundAttrRegex.replace(cleaned, "")
+                    cleaned = noAblateInsRegex.replace(cleaned, "")
+                    cleaned = aswiftHostRegex.replace(cleaned, "")
+                    cleaned = aswiftIframeRegex.replace(cleaned, "")
+                    cleaned = googleEsfRegex.replace(cleaned, "")
+                    if (cleaned != original) {
+                        htmlFile.writeText(cleaned, Charsets.UTF_8)
+                        logger.lifecycle("Stripped SSR AdSense DOM pollution from ${htmlFile.relativeTo(exportDir)}")
+                    }
+                }
         }
     }
 }

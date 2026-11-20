@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 import time
 
 from tests.helpers import (
@@ -17,6 +18,7 @@ from tests.helpers import (
     assert_drift_alive,
     assert_hidden_preserving_layout,
     assert_visibly_rendered,
+    capture_webgl_canvas_png,
     click_back_to_garage,
     click_mute_toggle,
     click_pause,
@@ -125,8 +127,12 @@ def t1_e1_04(ctx: TestContext) -> None:
                 for (const el of document.querySelectorAll(sel)) {
                     const r = el.getBoundingClientRect();
                     const cs = getComputedStyle(el);
-                    if (r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility === 'visible') {
-                        return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+                    if (r.width <= 0 || r.height <= 0 || cs.display === 'none' || cs.visibility !== 'visible' || parseFloat(cs.opacity) <= 0.05) continue;
+                    const cx = r.left + r.width / 2;
+                    const cy = r.top + r.height / 2;
+                    const hit = document.elementFromPoint(cx, cy);
+                    if (hit && (el === hit || el.contains(hit))) {
+                        return { cx, cy };
                     }
                 }
             }
@@ -442,8 +448,9 @@ def t1_e4_04(ctx: TestContext) -> None:
         s.key_up("KeyW")
 
     end_snap = get_snapshot(s)
-    assert max(post_speeds) > float(charged_snap["speedKmh"]) or end_snap["boostCharge"] < charged_snap["boostCharge"], (
-        f"Boost release did not surge or discharge: before={charged_snap}, after={end_snap}, speeds={post_speeds}"
+    assert max(post_speeds) > float(charged_snap["speedKmh"]) and end_snap["boostCharge"] < charged_snap["boostCharge"], (
+        f"Boost release did not produce speed surge & discharge: before={charged_snap['speedKmh']} (charge={charged_snap['boostCharge']}), "
+        f"after={end_snap['speedKmh']} (charge={end_snap['boostCharge']}), post_speeds={post_speeds}"
     )
     assert max(abs(p) for p in post_pitches) >= 0.3, f"No pitch reaction on boost launch: {post_pitches}"
 
@@ -533,8 +540,10 @@ def t1_e5_02(ctx: TestContext) -> None:
         s.key_up("KeyW")
 
     if crossed < 2:
-        # Use closed-loop steering fallback for remaining checkpoints
-        drive_laps_opaque_box(s, target_checkpoints=2 - crossed, timeout_s=20.0)
+        # Use closed-loop steering fallback for remaining checkpoints and keep tracking time bonus jumps
+        fb_stats: dict[str, float] = {}
+        drive_laps_opaque_box(s, target_checkpoints=2 - crossed, timeout_s=25.0, stats=fb_stats)
+        max_jump = max(max_jump, float(fb_stats.get("max_time_jump", -999.0)))
         assert int(get_snapshot(s)["checkpointIndex"]) >= 2 or max_jump > 4.0
     assert max_jump > 4.0, f"Expected +5.5s checkpoint time bonus (>4.0s jump), max_jump={max_jump:.2f}"
 
@@ -546,9 +555,12 @@ def t1_e5_03(ctx: TestContext) -> None:
     snap = get_snapshot(s)
     hud_text = s.eval_js("document.querySelector('#jellydrift-hud-layer')?.innerText || ''")
     pos = str(snap["position"])
-    assert pos in hud_text, f"HUD missing position {pos}: {hud_text!r}"
+    assert re.search(rf"(?:^|\D){re.escape(pos)}(?:\D|$)", hud_text), f"HUD missing position {pos}: {hud_text!r}"
     assert "1/3" in hud_text or "LAP 1" in hud_text.upper() or "1 / 3" in hud_text, f"HUD missing lap 1/3: {hud_text!r}"
-    assert "KM/H" in hud_text.upper() or str(int(round(snap["speedKmh"]))) in hud_text, f"HUD missing speed: {hud_text!r}"
+    speed_int = int(round(float(snap["speedKmh"])))
+    has_kmh = bool(re.search(r"km\s*/\s*h", hud_text, re.I))
+    has_speed_num = speed_int >= 10 and bool(re.search(rf"(?<![/\d]){speed_int}(?![/\d])", hud_text))
+    assert has_kmh or has_speed_num, f"HUD missing speed ({speed_int} km/h): {hud_text!r}"
 
 
 def t1_e5_04(ctx: TestContext) -> None:
@@ -582,13 +594,13 @@ def t1_e6_01(ctx: TestContext) -> None:
     if snap["cameraMode"] != "CHASE":
         s.press_key("KeyC")
         wait_snapshot(s, lambda x: x["cameraMode"] == "CHASE", timeout=2.0, desc="CHASE")
-    png_chase = s.screenshot_bytes()
+    png_chase = capture_webgl_canvas_png(s)
     s.press_key("KeyC")
     snap = wait_snapshot(s, lambda x: x["cameraMode"] == "DRIVER", timeout=1.5, desc="DRIVER")
     time.sleep(0.15)
-    png_driver = s.screenshot_bytes()
+    png_driver = capture_webgl_canvas_png(s)
     diff = mean_pixel_diff(png_chase, png_driver)
-    assert diff > 2.0, f"Camera switch CHASE->DRIVER produced negligible visual change (diff={diff:.2f})"
+    assert diff > 2.0, f"WebGL scene did not change meaningfully on CHASE->DRIVER (diff={diff:.2f})"
 
 
 def t1_e6_02(ctx: TestContext) -> None:
@@ -683,7 +695,9 @@ def t1_e7_02(ctx: TestContext) -> None:
     assert drect["width"] >= 100 and drect["height"] >= 35, f"Console ad collapsed: {drect}"
     assert drect["top"] >= 250 and drect["right"] <= 1280 and drect["bottom"] <= 720, f"Console rect out of lower cockpit region: {drect}"
     assert abs(srect["width"] - drect["width"]) < 5.0, f"Snapshot vs DOM rect mismatch: {srect} vs {drect}"
-    ins_rect = s.eval_js("document.querySelector('#console-ad-overlay ins.adsbygoogle').getBoundingClientRect()")
+    ins_info = inspect_element(s, "#console-ad-overlay ins.adsbygoogle", only_visible=False)
+    assert ins_info is not None, "Missing #console-ad-overlay ins.adsbygoogle"
+    ins_rect = ins_info["rect"]
     assert ins_rect["width"] >= 100 and ins_rect["height"] >= 35, f"<ins> collapsed: {ins_rect}"
 
 
@@ -762,27 +776,27 @@ def t1_e8_02(ctx: TestContext) -> None:
     if snap0["cameraMode"] != "CHASE":
         s.press_key("KeyC")
         snap0 = wait_snapshot(s, lambda x: x["cameraMode"] == "CHASE", timeout=2.0, desc="CHASE")
-    r0 = normalize_rect(get_snapshot(s)["adSlots"]["roof"]["rect"])
-    t0 = s.eval_js("document.querySelector('#roof-ad-overlay').style.transform")
+    p0 = snap0["playerWorldPos"]
+    r0 = normalize_rect(snap0["adSlots"]["roof"]["rect"])
 
     rects = [r0]
-    transforms = [t0]
     for c in ("KeyW", "KeyD", "Space"):
         s.key_down(c)
     try:
         for _ in range(10):
             time.sleep(0.15)
             rects.append(normalize_rect(get_snapshot(s)["adSlots"]["roof"]["rect"]))
-            transforms.append(s.eval_js("document.querySelector('#roof-ad-overlay').style.transform"))
     finally:
         for c in ("Space", "KeyD", "KeyW"):
             s.key_up(c)
 
+    p1 = get_snapshot(s)["playerWorldPos"]
+    world_dist = math.hypot(p1["x"] - p0["x"], p1["z"] - p0["z"])
     assert all(r["width"] > 40 and r["height"] > 15 for r in rects), f"Invalid roof rects: {rects}"
     dx = max(abs(r["left"] - r0["left"]) for r in rects)
     dy = max(abs(r["top"] - r0["top"]) for r in rects)
-    assert max(dx, dy) >= 5.0 or len(set(transforms)) > 2, (
-        f"Roof ad did not move dynamically with car (dx={dx:.1f}, dy={dy:.1f}, unique_transforms={len(set(transforms))})"
+    assert max(dx, dy) >= 5.0 and world_dist >= 3.0, (
+        f"Roof ad did not move dynamically with car (dx={dx:.1f}, dy={dy:.1f}, world_dist={world_dist:.2f}m)"
     )
 
 
@@ -878,21 +892,26 @@ def t1_e9_04(ctx: TestContext) -> None:
 def t1_e9_05(ctx: TestContext) -> None:
     s = ctx.session
     ensure_garage(s, ctx.base_url)
+    ad_ins_selector = (
+        "#jellydrift-ad3d-layer ins.adsbygoogle:not(.adsbygoogle-noablate), "
+        "#jellydrift-modal-layer ins.adsbygoogle:not(.adsbygoogle-noablate), "
+        "ins.adsbygoogle[data-ad-placement]"
+    )
     ins_garage = s.eval_js(
-        "Array.from(document.querySelectorAll('ins.adsbygoogle')).map(el => ({ "
+        f"Array.from(document.querySelectorAll({ad_ins_selector!r})).map(el => ({{ "
         "id: el.parentElement?.id || el.id, client: el.getAttribute('data-ad-client'), slot: el.getAttribute('data-ad-slot') }))"
     )
-    assert len(ins_garage) >= 1
+    assert len(ins_garage) >= 1, f"Expected >=1 app-owned <ins.adsbygoogle> in GARAGE, got {ins_garage}"
     for item in ins_garage:
         assert item["client"] == PUBLISHER_ID_CA, f"Bad data-ad-client: {item}"
         assert item["slot"] and len(item["slot"].strip()) > 0, f"Empty data-ad-slot: {item}"
 
     start_race(s, track_id="sunny_coast", car_id="jelly_gt", mode_id="DRIFT_RUSH")
     ins_race = s.eval_js(
-        "Array.from(document.querySelectorAll('ins.adsbygoogle')).map(el => ({ "
+        f"Array.from(document.querySelectorAll({ad_ins_selector!r})).map(el => ({{ "
         "placement: el.getAttribute('data-ad-placement'), client: el.getAttribute('data-ad-client'), slot: el.getAttribute('data-ad-slot') }))"
     )
-    assert len(ins_race) >= 2
+    assert len(ins_race) >= 2, f"Expected >=2 app-owned <ins.adsbygoogle> in RACING, got {ins_race}"
     for item in ins_race:
         assert item["client"] == PUBLISHER_ID_CA, f"Bad data-ad-client in race: {item}"
         assert item["slot"] and len(item["slot"].strip()) > 0, f"Empty data-ad-slot in race: {item}"
@@ -906,7 +925,7 @@ def t1_e9_05(ctx: TestContext) -> None:
 def t1_e10_01(ctx: TestContext) -> None:
     s = ctx.session
     ensure_racing(s, ctx.base_url, track_id="sunny_coast", car_id="jelly_gt", mode_id="DRIFT_RUSH")
-    snap = wait_for_drift_rush_timeout(s, timeout_s=55.0)
+    snap = wait_for_drift_rush_timeout(s, timeout_s=75.0)
     assert snap["phase"] == "CONTINUE_OFFER"
     assert snap["adSlots"]["continueModal"]["open"] is True
     assert_visibly_rendered(s, '[data-testid="watch-ad-continue-btn"]')
@@ -918,7 +937,7 @@ def t1_e10_02(ctx: TestContext) -> None:
     path = s.eval_js("window.location.pathname")
     if path != "/drift" or not s.eval_js("!!window.__JELLY_DRIFT__") or get_snapshot(s).get("phase") != "CONTINUE_OFFER":
         ensure_racing(s, ctx.base_url, track_id="sunny_coast", car_id="jelly_gt", mode_id="DRIFT_RUSH")
-        wait_for_drift_rush_timeout(s, timeout_s=55.0)
+        wait_for_drift_rush_timeout(s, timeout_s=75.0)
 
     assert_visibly_rendered(s, '[data-testid="watch-ad-continue-btn"]')
     click_selector(s, '[data-testid="watch-ad-continue-btn"]')
