@@ -23,9 +23,19 @@ Kotfolio is a minimalistic and clean portfolio project built with [Kobweb](https
 
 Kotfolio includes an integrated WebGL racing game at the `/drift` route. Built with a custom JavaScript 3D engine (Three.js) and orchestrated through Kobweb's Compose HTML bridge, it features creative Google AdSense placements woven into the gameplay experience.
 
+### Touge Drift Circuits
+
+The game features three handcrafted mountain-pass touge circuits packed with continuous S-bends, hairpins, switchbacks, and chicanes — designed for technical drifting rather than straight-line speed:
+
+- **Sunny Coast** (`sunny_coast`): Cliffside switchback touge with a rock-cut gallery arch tunnel, coastal lighthouse, wooden pier with sailboats, and yellow/black hairpin chevrons.
+- **Canyon Loop** (`canyon_loop`): Red-rock mountain pass with dramatic elevation changes, sandstone road arch, layered mesas, a canyon lookout watchtower, and branched saguaro cacti.
+- **Neon Circuit** (`neon_circuit`): Midnight expressway touge featuring a 9.4m split-level viaduct overpass, illuminated tunnel with LED ceiling strips, a lit-window skyscraper skyline, and overhead highway destination signs.
+
+All three circuits run at tight touge proportions (`halfWidth` 8.2–8.6m, ~870–985m length) with smooth Catmull-Rom spline geometry and safe inner-miter ribbon extrusion that prevents wall inversion at hairpins.
+
 ### Gameplay
 - **4 Cars**: `jelly_gt`, `tofu_86`, `bumble_buggy`, `cobalt_hyper` — each with unique stats (top speed, acceleration, drift factor, bounce)
-- **3 Tracks**: Circuit layouts with trackside billboards and gantry anchors for dynamic ad placement
+- **3 Tracks**: Technical touge layouts with trackside billboards and gantry anchors for dynamic ad placement
 - **2 Modes**: 
   - *Drift Rush* — Time-trial drifting challenges
   - *Grand Prix* — Multi-lap racing against AI opponents
@@ -44,8 +54,8 @@ Kotfolio includes an integrated WebGL racing game at the `/drift` route. Built w
 
 ### Creative Ad Placements
 The game integrates Google AdSense through multiple contextual placements:
-- **Driver Center-Console Ad**: In-car dashboard display visible during gameplay
-- **3rd-Person Moving Roof Ad**: Billboard mounted on the car's roof, visible in chase camera
+- **Driver Center-Console Ad**: Recessed in-car dashboard OLED display visible during gameplay
+- **3rd-Person Moving Roof Ad**: Flush aero roof pod LED panel visible in chase camera
 - **Watch-an-Ad-to-Continue**: Interstitial ad between laps/sessions
 - **Trackside Billboards**: Dynamic 3D meshes along track boundaries (`billboardMeshes`)
 - **Garage & Podium Banners**: Static banners in menu screens

@@ -356,7 +356,7 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
     const throttle = curSpeed < targetSpeed;
     const brake = curSpeed > targetSpeed + 4.5 && cornerAngle > 0.30;
     const wantDrift = cornerAngle > 0.24 && curSpeed > 11.5 && Math.abs(headingErr) > 0.12;
-    const wantBoost = !wantDrift && (ai.boostTier || 0) >= 1 && Math.abs(headingErr) < 0.18;
+    const wantBoost = false;
 
     input = {
       throttle,

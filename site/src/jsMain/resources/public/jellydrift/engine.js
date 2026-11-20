@@ -550,8 +550,8 @@ export function createJellyDriftEngine(config) {
       player.vLateral = 0;
       player.slip = 0;
       player.drifting = false;
-      player.boostCharge = 1.0;
-      player.boostTier = 3;
+      player.boostCharge = 0;
+      player.boostTier = 0;
       player.boostTime = 0;
       syncPlayerVisual(0);
       cameraRig.resetFollow(player.yaw);
@@ -1005,7 +1005,7 @@ export function createJellyDriftEngine(config) {
             dt,
             player,
             state.phase === "RACING" && player.drifting,
-            state.phase === "RACING" && (player.boostTime || 0) > 0
+            false
           );
         } catch (_) {
           /* visual-only */
@@ -1015,7 +1015,7 @@ export function createJellyDriftEngine(config) {
       updateAds();
 
       if (state.phase === "RACING" && player) {
-        audio.update(speedKmh(player), player.drifting, (player.boostTime || 0) > 0);
+        audio.update(speedKmh(player), player.drifting, false);
       } else {
         audio.update(0, false, false);
       }
@@ -1058,7 +1058,7 @@ export function createJellyDriftEngine(config) {
     else if (code === "KeyA" || code === "ArrowLeft") keyInput.left = true;
     else if (code === "KeyD" || code === "ArrowRight") keyInput.right = true;
     else if (code === "Space") keyInput.drift = true;
-    else if (code === "ShiftLeft" || code === "ShiftRight") keyInput.boost = true;
+    else if (code === "ShiftLeft" || code === "ShiftRight") keyInput.boost = false;
     else if (code === "KeyB") reverseLook = true;
 
     if (e.repeat) return;

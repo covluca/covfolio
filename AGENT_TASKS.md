@@ -11,7 +11,7 @@
 |---|---|---|---|
 | **`antigravity`** | `READY` | `site/src/jsMain/resources/public/jellydrift/tracks.js`<br>`site/src/jsMain/resources/public/jellydrift/physics.js`<br>`site/src/jsMain/resources/public/jellydrift/ai.js`<br>`site/src/jsMain/resources/public/jellydrift/engine.js` | Touge maps + distinct world landmarks, hairpin geometry continuity, tight drift physics + inertia + brake-before-reverse, AI/engine sync |
 | **`copilot`** | `READY` | `site/src/jsMain/resources/public/jellydrift/camera.js`<br>`site/src/jsMain/resources/public/jellydrift/ads3d.js`<br>`site/src/jsMain/kotlin/com/binayshaw7777/kotfolio/pages/Drift.kt` | Rigid car-locked cameras (`CHASE` / `DRIVER` / `HOOD`) without speed pull-out or crazy bobbing, perspective `matrix3d` ad mapping, integrated OLED console & flush roof pod styling |
-| **`opencode`** | `READY` | `site/src/jsMain/resources/public/jellydrift/cars.js`<br>`site/src/jsMain/resources/public/jellydrift/vfx.js`<br>`site/src/jsMain/resources/public/jellydrift/audio.js`<br>`site/src/jsMain/kotlin/com/binayshaw7777/kotfolio/game/JellyDriftMenus.kt`<br>`README.md` | Replace "post sign" roof & dash geometry in `cars.js` with flush aero roof pod + recessed console cowl & corner anchors, touge drift VFX & audio feel, updated track descriptions |
+| **`opencode`** | `READY` | `site/src/jsMain/resources/public/jellydrift/cars.js`<br>`site/src/jsMain/resources/public/jellydrift/vfx.js`<br>`site/src/jsMain/resources/public/jellydrift/audio.js`<br>`site/src/jsMain/kotlin/com/binayshaw7777/kotfolio/game/JellyDriftMenus.kt`<br>`site/src/jsMain/kotlin/com/binayshaw7777/kotfolio/game/JellyDriftHud.kt`<br>`README.md` | Replace "post sign" roof & dash geometry in `cars.js` with flush aero roof pod + recessed console cowl & corner anchors, touge drift VFX & audio feel, remove Boost UI/prompts in menus/HUD (`Space` = Handbrake), updated track descriptions |
 
 > **Protected (Do NOT touch)**: `site/src/jsMain/resources/public/jellydrift/vendor/*`, `e2e/tests/*.py`.
 
@@ -39,6 +39,11 @@
   4. **Instant reverse on braking**: Fix `physics.js` lines 413–420 (`if (vForward > 0.6) ... else reverse`) so braking while moving forward brings the car smoothly to `0` and **stays stopped** until either brake is released and pressed again OR brake is held cleanly at standstill (`>= 0.40s` hold threshold) before reverse gear engages.
 - **`AG-5` (`ai.js`, `engine.js`) — Touge AI & Engine Plumbing**:
   - Tune AI lookahead, corner speed braking/drift lines, and `safeSpawnLane` offsets for `7.8–9.2m` touge road widths; adjust `engine.js` garage orbit framing if needed for tighter roads.
+- **`AG-6` (`physics.js`, `ai.js`, `engine.js`) — Wave 2: Back-Heavy Balance, Higher Inertia, Zero Boost & Spacebar Handbrake**:
+  - **Never Boost**: Disable all boost triggers/multipliers in `physics.js` (drift release, manual boost, `grantContinue` refill -> `boostTime = 0`, `boostSpeedMult = 1.0`, `boostAccelAdd = 0`), set `ai.js` `wantBoost = false`, and pass `false` for boost VFX/audio in `engine.js`.
+  - **Spacebar (`input.drift`) = True Handbrake**: Holding `Space` locks/drags rear wheels when moving forward (`vForward > 1.5`), applying handbrake deceleration while dropping rear lateral grip so the tail swings cleanly into hairpins; releasing `Space` hooks rear grip back up with zero boost launch.
+  - **Back-Heavy Weight Bias**: Shift dynamic balance rearward — easier lift-off/power oversteer, rear pendulum carry around front axle, rear-squat pitch bias, and looser rear lateral grip during aggressive steering/throttle compared to front turn-in bite.
+  - **Higher Inertia**: Lower coasting drag (`dragDecel ~ 0.38 + 0.0022 * v^2`) so lifting throttle carries momentum much longer, plus smoother rotational yaw inertia and heavier lateral momentum carry through S-bend transitions.
 
 ---
 
@@ -57,6 +62,8 @@
     - `#console-ad-overlay`: recessed cockpit infotainment display (dark matte bezel, subtle inner glass sheen, tight dashboard fit).
     - `#roof-ad-overlay`: flush aero roof pod LED strip panel (sleek low-profile edge bevel matching car roof).
   - Keep `#console-ad-overlay`, `#roof-ad-overlay`, `ins.adsbygoogle`, `"SPONSORED"` fallback labels, and `pointerEvents(PointerEvents.None)` intact.
+- **`CP-4` (`camera.js`) — Wave 2: Cap FPV Speed Pullback/FOV at 40 km/h**:
+  - In `DRIVER` (FPV) mode, cap any speed-based FOV expansion or camera offset (`fpvSpeedFactor = clamp(speed / 11.11, 0, 1)`, i.e. **`40 km/h` ceiling**; `11.11 m/s = 40 km/h`). Ensure `camera.position` stays strictly locked inside the cabin ahead of the seatback at all speeds (60–120+ km/h must not pull the camera back further than it sits at `40 km/h`).
 
 ---
 
@@ -73,6 +80,9 @@
   - Enhance drift tire smoke plumes, sharper dual skid ribbons, subtle exhaust flame / kerb spark feedback, and responsive tire-screech + engine RPM curve tuned for rapid touge transitions.
 - **`OC-3` (`JellyDriftMenus.kt`, `README.md`) — Track UI Copy & Docs**:
   - Once `antigravity` logs any updated track subtitles/names in `COLLAB_LOG.md`, optionally sync track subtitles/tips in `JellyDriftMenus.kt` and document the touge overhaul & 3-agent architecture in `README.md`.
+- **`OC-4` (`JellyDriftHud.kt`, `JellyDriftMenus.kt`, `vfx.js`, `audio.js`, `README.md`) — Wave 2: Remove Boost & Rebind UI/VFX/Audio for Space = Handbrake**:
+  - **`JellyDriftMenus.kt` / `JellyDriftHud.kt` / `README.md`**: Update Garage copy (`"Drift to charge your boost"` -> handbrake/drift copy, `Space Handbrake` in `ControlsHint`), hide/remove active Boost trigger behavior on HUD (`BST` button or boost meter — keep `data-testid` attributes intact if present or replace `BST` label with `HBK` / handbrake touch trigger calling `setTouchInput(drift=true)` while keeping `touch-boost-btn` harmless if needed).
+  - **`vfx.js` & `audio.js`**: Remove/suppress turbo boost flame/after-fire cues since cars never boost; emphasize rear handbrake lockup smoke & tire-screech onset when Spacebar handbrake is engaged.
 
 ---
 

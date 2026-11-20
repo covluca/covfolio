@@ -149,7 +149,7 @@ export function createAudio() {
           screechFilter = ctx.createBiquadFilter();
           screechFilter.type = "bandpass";
           screechFilter.frequency.value = 1150;
-          screechFilter.Q.value = 3.5;
+          screechFilter.Q.value = 5.5;
 
           screechGain = ctx.createGain();
           screechGain.gain.value = 0;
@@ -456,6 +456,63 @@ export function createAudio() {
     }
   }
 
+  // After-fire pop when the boost cuts out: unburnt fuel crackling in the pipes.
+  function playAfterFire() {
+    if (!canPlayOneShot()) return;
+    try {
+      const now = finite(ctx.currentTime, 0);
+      const dur = 0.18;
+
+      const osc = ctx.createOscillator();
+      const oscGain = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(pos(180), now);
+      osc.frequency.exponentialRampToValueAtTime(pos(58), now + dur);
+      oscGain.gain.setValueAtTime(pos(0.22), now);
+      oscGain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.connect(oscGain);
+      oscGain.connect(master);
+      osc.onended = () => {
+        try {
+          osc.disconnect();
+          oscGain.disconnect();
+        } catch (_) {}
+      };
+      osc.start(now);
+      osc.stop(now + dur + 0.02);
+
+      if (noiseBuffer) {
+        const src = ctx.createBufferSource();
+        src.buffer = noiseBuffer;
+        src.playbackRate.value = 1.45;
+        const bp = ctx.createBiquadFilter();
+        bp.type = "bandpass";
+        bp.Q.value = 2.4;
+        bp.frequency.setValueAtTime(pos(1100), now);
+        bp.frequency.exponentialRampToValueAtTime(pos(240), now + dur);
+
+        const nGain = ctx.createGain();
+        nGain.gain.setValueAtTime(pos(0.3), now);
+        nGain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+        src.connect(bp);
+        bp.connect(nGain);
+        nGain.connect(master);
+        src.onended = () => {
+          try {
+            src.disconnect();
+            bp.disconnect();
+            nGain.disconnect();
+          } catch (_) {}
+        };
+        src.start(now);
+        src.stop(now + dur + 0.02);
+      }
+    } catch (_) {
+      // safe no-op
+    }
+  }
+
   function update(speedKmh = 0, drifting = false, boosting = false, boostOrSlip = 1) {
     if (disposed || !ctx || !master || !oscA || !oscB || !oscC || !oscD || !engineFilter) return;
 
@@ -463,16 +520,18 @@ export function createAudio() {
     const now = finite(ctx.currentTime, 0);
     const isBoosting = !!boosting;
 
-    // Edge-trigger turbo boost SFX when boost begins
+    // Edge-trigger turbo boost SFX when boost begins, after-fire crackle when it ends
     if (isBoosting && !wasBoosting) {
       const tier = typeof boostOrSlip === "number" ? clamp(Math.round(boostOrSlip), 1, 3, 1) : 1;
       playBoost(tier);
+    } else if (!isBoosting && wasBoosting) {
+      playAfterFire();
     }
     wasBoosting = isBoosting;
 
     // Engine RPM proxy from speed; load from boost/slip.
-    const rpm = clamp(spd * 1.1 + 60, 40, 340);
-    const rpmNorm = clamp((rpm - 40) / 300, 0, 1);
+    const rpm = clamp(spd * 1.35 + 65, 40, 360);
+    const rpmNorm = clamp((rpm - 40) / 320, 0, 1);
     let load = 0;
     if (isBoosting) {
       load = 1;
@@ -485,31 +544,31 @@ export function createAudio() {
     // Layered procedural engine: A/B fundamentals rise with RPM, C sub-rumble
     // fades as RPM climbs, D harmonic layer gets raspier with RPM and load.
     const baseFreq = pos(45 + 295 * rpmNorm + (isBoosting ? 26 : 0), 20);
-    safeSetTarget(oscA.frequency, baseFreq, now, 0.06);
-    safeSetTarget(oscB.frequency, pos(baseFreq * 1.35, 20), now, 0.06);
-    safeSetTarget(oscC.frequency, pos(baseFreq * 0.42, 20), now, 0.06);
-    safeSetTarget(oscD.frequency, pos(baseFreq * 3.0, 20), now, 0.06);
+    safeSetTarget(oscA.frequency, baseFreq, now, 0.035);
+    safeSetTarget(oscB.frequency, pos(baseFreq * 1.35, 20), now, 0.035);
+    safeSetTarget(oscC.frequency, pos(baseFreq * 0.42, 20), now, 0.035);
+    safeSetTarget(oscD.frequency, pos(baseFreq * 3.0, 20), now, 0.035);
 
     // Timbre shifts with RPM and load: brighter filter + harmonic mix up high,
     // dirty growl noise layer while loaded.
-    safeSetTarget(engineFilter.frequency, pos(640 + 1600 * rpmNorm + 500 * load, 120), now, 0.07);
-    safeSetTarget(engineFilter.Q, pos(1.15 + 0.7 * rpmNorm + 0.5 * load, 0.6), now, 0.09);
-    safeSetTarget(engineGain.gain, pos(0.9 + 0.07 * rpmNorm + 0.06 * load, 0.2), now, 0.06);
+    safeSetTarget(engineFilter.frequency, pos(640 + 1600 * rpmNorm + 500 * load, 120), now, 0.045);
+    safeSetTarget(engineFilter.Q, pos(1.15 + 0.7 * rpmNorm + 0.5 * load, 0.6), now, 0.06);
+    safeSetTarget(engineGain.gain, pos(0.9 + 0.07 * rpmNorm + 0.06 * load, 0.2), now, 0.04);
 
-    safeSetTarget(oscC.gain, pos(0.15 + 0.10 * (1 - rpmNorm) + 0.05 * load, 0.05), now, 0.07);
-    safeSetTarget(oscD.gain, pos(0.08 + 0.24 * rpmNorm + 0.22 * load, 0.04), now, 0.07);
+    safeSetTarget(oscC.gain, pos(0.15 + 0.10 * (1 - rpmNorm) + 0.05 * load, 0.05), now, 0.045);
+    safeSetTarget(oscD.gain, pos(0.08 + 0.24 * rpmNorm + 0.22 * load, 0.04), now, 0.045);
 
     if (growlSrc && growlFilter && growlGain) {
       const growlFreq = pos(500 + 1400 * rpmNorm + 600 * load, 120);
       const targetGrowl = muted ? 0 : pos(0.04 + 0.26 * load + 0.10 * rpmNorm * (1 - load), 0.02);
-      safeSetTarget(growlFilter.frequency, growlFreq, now, 0.06);
-      safeSetTarget(growlFilter.Q, pos(2.0 + 0.8 * load, 0.5), now, 0.1);
-      safeSetTarget(growlGain.gain, targetGrowl, now, 0.06);
+      safeSetTarget(growlFilter.frequency, growlFreq, now, 0.045);
+      safeSetTarget(growlFilter.Q, pos(2.0 + 0.8 * load, 0.5), now, 0.07);
+      safeSetTarget(growlGain.gain, targetGrowl, now, 0.04);
     }
 
     // Master gain
-    const targetMaster = muted ? 0 : isBoosting ? 0.075 : drifting ? 0.065 : 0.052;
-    safeSetTarget(master.gain, targetMaster, now, 0.06);
+    const targetMaster = muted ? 0 : isBoosting ? 0.082 : drifting ? 0.072 : 0.055;
+    safeSetTarget(master.gain, targetMaster, now, 0.045);
 
     // Slip-proportional tire screech (unchanged)
     if (screechGain && screechFilter) {
@@ -520,10 +579,10 @@ export function createAudio() {
         slipNorm = typeof boostOrSlip === "number" && !isBoosting ? clamp(Math.abs(boostOrSlip), 0.25, 1, 0.72) : 0.72;
       }
       const speedScale = clamp(spd / 45, 0, 1, 0);
-      const targetScreech = muted ? 0 : slipNorm * speedScale * 0.42;
-      const centerFreq = pos(920 + slipNorm * 620, 200);
-      safeSetTarget(screechFilter.frequency, centerFreq, now, 0.05);
-      safeSetTarget(screechGain.gain, targetScreech, now, 0.05);
+      const targetScreech = muted ? 0 : slipNorm * speedScale * 0.46;
+      const centerFreq = pos(1050 + slipNorm * 780, 200);
+      safeSetTarget(screechFilter.frequency, centerFreq, now, 0.028);
+      safeSetTarget(screechGain.gain, targetScreech, now, 0.028);
     }
   }
 

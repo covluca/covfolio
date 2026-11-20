@@ -158,7 +158,8 @@ export function createCameraRig(THREE, aspect) {
 
       camera.position.copy(driverPosition);
       initialized = true;
-      const targetFov = 74 + speedFactor * 5;
+      const fpvSpeedFactor = clamp(speed / 11.11, 0, 1);
+      const targetFov = 74 + fpvSpeedFactor * 5;
       if (Math.abs(camera.fov - targetFov) > 0.05) {
         camera.fov = targetFov;
         camera.updateProjectionMatrix();

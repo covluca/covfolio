@@ -45,6 +45,12 @@ private val TRACKS = listOf(
     "neon_circuit" to "Neon Circuit",
 )
 
+private val TRACK_SUBTITLES = mapOf(
+    "sunny_coast" to "Cliffside switchback touge",
+    "canyon_loop" to "Red-rock mountain pass",
+    "neon_circuit" to "Midnight expressway touge",
+)
+
 private val CARS = listOf(
     "jelly_gt" to "Jelly GT",
     "tofu_86" to "Tofu 86",
@@ -141,6 +147,7 @@ private fun SelectCard(
     selected: Boolean,
     onSelect: () -> Unit,
     widthPx: Int,
+    subtitle: String? = null,
 ) {
     val currentOnSelect = rememberUpdatedState(onSelect)
     Div(
@@ -192,6 +199,17 @@ private fun SelectCard(
                 .color(if (selected) ACCENT_YELLOW else Colors.White)
                 .textAlign(TextAlign.Center)
         )
+        if (subtitle != null) {
+            SpanText(
+                subtitle,
+                modifier = Modifier
+                    .margin(top = 2.px)
+                    .fontFamily(Fonts.DM_SANS)
+                    .fontSize(0.60.cssRem)
+                    .color(Colors.LightGray)
+                    .textAlign(TextAlign.Center)
+            )
+        }
     }
 }
 
@@ -342,6 +360,7 @@ fun GarageMenu(
                     selected = snapshot.trackId == id,
                     onSelect = { bridge.selectTrack(id) },
                     widthPx = 110,
+                    subtitle = TRACK_SUBTITLES[id],
                 )
             }
         }
