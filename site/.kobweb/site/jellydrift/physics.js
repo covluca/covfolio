@@ -1,4 +1,4 @@
-import { getCar } from "./cars.js";
+import { getCar, MAX_TOP_SPEED_MS } from "./cars.js";
 
 export const FIXED_DT = 1 / 60;
 export const MAX_SLIP_RAD = 1.01; // ~57.8 deg (< 75 deg E2E cap)
@@ -215,7 +215,9 @@ export function applyCollision(state, strength = 0.5, normalX = 0, normalZ = 0) 
 
 /**
  * Projects car onto track spline, updates elevation/airtime/surface pitch & bank,
- * and resolves barrier collisions while preserving ~82% tangential momentum.
+ * and resolves barrier collisions with a natural impulse: the normal component is
+ * reflected with restitution and the incoming tangential speed is preserved, so the
+ * car keeps its heading/rotation instead of snapping the tangent into place.
  */
 export function applyTrackBoundary(state, track, dt = FIXED_DT) {
   if (!state || !track || typeof track.projectToTrack !== "function") return null;
@@ -282,20 +284,14 @@ export function applyTrackBoundary(state, track, dt = FIXED_DT) {
 
     if (vN > 0) {
       const isHeavyImpact = vN > 1.8 && state.wallCooldown <= 0;
-      const vNNew = isHeavyImpact ? -Math.min(vN * 0.24, 5.0) : 0;
-      const totalImpactSpd = Math.hypot(vT, vN);
-      const vTNew = isHeavyImpact
-        ? (vT >= -2.0 ? Math.max(vT * 0.84, Math.min(totalImpactSpd * 0.60, (state.def?.maxSpeed || 44) * 0.68)) : vT * 0.82)
-        : vT * (1 - 0.32 * dtSafe);
+      // Natural wall impulse: reflect the normal component with restitution and
+      // keep the incoming tangential speed (light damping). The car preserves its
+      // incoming heading and rotation: no tangent snapping, no yaw snapping.
+      const restitution = isHeavyImpact ? 0.45 : 0.22;
+      const vNNew = -Math.min(vN * restitution, 9.0) + (isHeavyImpact ? 0.08 : 0);
+      const vTNew = vT * (isHeavyImpact ? 0.97 : 0.99);
       state.vel.x = vTNew * tx + vNNew * nx;
       state.vel.z = vTNew * tz + vNNew * nz;
-
-      // Align yaw toward track tangent so car glances along the barrier instead of wedging
-      const trackAngle = Math.atan2(tx, tz);
-      const yawDiff = wrapAngleRad(trackAngle - state.yaw);
-      if (Math.abs(yawDiff) > 0.05 && Math.abs(yawDiff) < 2.25 && vT > -5.0) {
-        state.yaw = wrapAngleRad(state.yaw + yawDiff * (isHeavyImpact ? 0.84 : 0.30));
-      }
 
       const fx = Math.sin(state.yaw);
       const fz = Math.cos(state.yaw);
@@ -402,7 +398,8 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
       activeTier === 3 ? 1.38 : activeTier === 2 ? 1.28 : activeTier === 1 ? 1.18 : 1.0;
     const boostAccelAdd = activeTier * 15.0;
 
-    const maxFwd = (def.maxSpeed || def.topSpeed || 44) * boostSpeedMult;
+    // Hard 120 km/h ceiling applies to the world speed too (see below).
+    const maxFwd = Math.min((def.maxSpeed || def.topSpeed || 44) * boostSpeedMult, MAX_TOP_SPEED_MS);
     const maxRev = -(def.reverseSpeed || 13);
 
     // Longitudinal forces
@@ -432,9 +429,17 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
 
     // Slip & drift state
     const speedAbs = Math.abs(vForward);
+
+    // Jelly Drift style: low-speed elastic drift. Drift engages as early as the
+    // speed allows — holding the drift input while steering into a turn (~6 m/s),
+    // or auto-discovering it once the car is already sliding (~8 m/s).
     const driftActive =
-      (wantDrift && vForward > 7.0) ||
-      (!brake && Math.abs(steer) > 0.78 && vForward > 22.0 && Math.abs(vRight) > 5.0);
+      (wantDrift && vForward > 6.0 && Math.abs(steer) > 0.12) ||
+      (!brake && Math.abs(steer) > 0.78 && vForward > 8.0 && Math.abs(vRight) > 1.5);
+
+    // Elastic slide: keep the elastic drive running while lateral speed has been
+    // built up (drifting, or a slide that is still easing out after drift ends).
+    const elasticDrift = driftActive || Math.abs(vRight) > 1.2;
 
     const rawSlip = vForward > 1.2 ? Math.atan2(vRight, vForward) : 0;
     const driftGrip = clamp(def.driftGrip || 1.0, 0.75, 1.4, 1.0);
@@ -450,8 +455,17 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
       vForward *= 1 - 0.05 * h;
     }
 
+    // Elastic lateral drive: instead of hard-damping the lateral speed, drive it
+    // toward a steering-proportional target so the slide builds gently and eases
+    // back out as steering is released — the Jelly Drift feel at low speed.
+    if (elasticDrift) {
+      const elasticTarget = vForward * clamp(steer, -1, 1, 0) * 0.85;
+      const elasticDamp = Math.min(5.0, Math.max(2.0, 3.0 * driftGrip));
+      vRight += h * elasticDamp * (elasticTarget - vRight);
+    }
+
     // Counter-steer stabilizer: prevents spin-outs and caps |slip| <= MAX_SLIP_RAD (~58 deg)
-    let latDamping = driftActive ? (Math.abs(steer) > 0.08 ? 1.65 / driftGrip : 5.8) : 13.5;
+    let latDamping = elasticDrift ? 0.35 : 13.5;
     if (Math.abs(rawSlip) > 0.78) {
       const excess = clamp((Math.abs(rawSlip) - 0.78) / (MAX_SLIP_RAD - 0.78), 0, 1.5, 0);
       if (steer * rawSlip > 0) {
@@ -469,6 +483,15 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
 
     state.vel.x = vForward * fx + vRight * rx;
     state.vel.z = vForward * fz + vRight * rz;
+
+    // Hard ceiling on the world speed: lateral slide speed must not push the
+    // car past the tuning cap once the chassis is at max forward speed.
+    const worldSpeed = Math.hypot(state.vel.x, state.vel.z);
+    if (worldSpeed > MAX_TOP_SPEED_MS && worldSpeed > 0.01) {
+      const scale = MAX_TOP_SPEED_MS / worldSpeed;
+      state.vel.x *= scale;
+      state.vel.z *= scale;
+    }
 
     // Rotate chassis heading and re-project world momentum into new car frame
     state.yaw = wrapAngleRad(state.yaw + yawRate * h);
@@ -489,7 +512,7 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
 
     const slipRad = newVForward > 1.2 ? Math.atan2(newVRight, newVForward) : 0;
     state.slip = clamp(slipRad, -MAX_SLIP_RAD, MAX_SLIP_RAD, 0);
-    state.drifting = !!(driftActive && Math.abs(state.slip) > 0.14 && newVForward > 7.5);
+    state.drifting = !!(driftActive && Math.abs(state.slip) > 0.14 && newVForward > 5.0);
 
     // Drift score & 3-tier boost charging
     if (state.drifting) {

@@ -6,12 +6,8 @@
 
 ## Locks & Active Ownership
 
-- **`BUILD_OR_E2E_LOCK`**: `ACTIVE (Primary Agent — running final E2E Tiers 1–4 + build against site/.kobweb/site/)`
-- **Files currently locked by Primary Agent (`IN_PROGRESS`)**:
-  - `site/.kobweb/site/*`
-  - `site/src/jsMain/kotlin/com/binayshaw7777/kotfolio/game/*`
-  - `site/src/jsMain/resources/public/jellydrift/*`
-  - `e2e/*`
+- **`BUILD_OR_E2E_LOCK`**: `FREE`
+- **Files currently locked by Primary Agent (`IN_PROGRESS`)**: none
 
 ---
 
@@ -40,4 +36,4 @@ These tasks touch isolated files with **zero** conflict with the Primary Agent's
 | ID | Status | Scope | Notes |
 |---|---|---|---|
 | `TASK-P1` | `DONE` | Milestones 1–3 (`Drift.kt`, `GameLayout.kt`, `AdConfig.kt`, `JellyDriftBridge.kt`, `JellyDriftHud.kt`, `JellyDriftMenus.kt`, `jellydrift/*.js`) | Implemented 3D racing game, creative AdSense overlays, and Compose phase-commit sync. |
-| `TASK-P2` | `IN_PROGRESS` | Milestone 4 (`e2e/run_e2e.py` Tiers 1–4 + `./gradlew.bat build`) | Running final E2E Tiers 1–4 + build against `site/.kobweb/site/`. Will flip `BUILD_OR_E2E_LOCK` to `FREE` upon completion. |
+| `TASK-P2` | `DONE` | Milestone 4 (`e2e/run_e2e.py` Tiers 1–4 + `./gradlew.bat build`) | E2E completed. Final `:site:kobwebExport` successful — all 5 pages rendered, AdSense SSR pollution stripped. `BUILD_OR_E2E_LOCK` released. |

@@ -22,6 +22,8 @@ export function createCameraRig(THREE, aspect) {
   const desired = new THREE.Vector3();
   const look = new THREE.Vector3();
   const tmp = new THREE.Vector3();
+  const driverPosition = new THREE.Vector3();
+  const driverLook = new THREE.Vector3();
 
   let mode = "CHASE";
   let initialized = false;
@@ -134,14 +136,48 @@ export function createCameraRig(THREE, aspect) {
         desired.set(px - rx * 0.25 + fx * 0.08, py + 1.04 + bob, pz - rz * 0.25 + fz * 0.08);
         look.set(px + fx * 12.0, py + 0.92 + bob, pz + fz * 12.0);
       }
-      camera.position.copy(desired);
+
+      // Lift and center the eye slightly above the modeled anchor so the dash,
+      // steering wheel, and hood stay below the driving sightline.
+      desired.x += fx * 0.10;
+      desired.y += 0.08 + bounceY * 0.18;
+      desired.z += fz * 0.10;
+
+      // Let the view lead a small amount into a slide without turning the
+      // camera into a distracting chase-orbit.
+      const slip = clamp(player.slip || 0, -0.7, 0.7);
+      look.x += rx * slip * 1.45 + fx * 1.2;
+      look.y += 0.10 + bounceY * 0.12;
+      look.z += rz * slip * 1.45 + fz * 1.2;
+
+      const t = player.time || 0;
+      const bobStrength = speedFactor * 0.018;
+      tmp.set(
+        Math.sin(t * 11.7) * bobStrength,
+        Math.sin(t * 15.1) * bobStrength * 0.45,
+        Math.cos(t * 10.3) * bobStrength * 0.35
+      );
+      desired.add(tmp);
+
+      if (!initialized || dt <= 0) {
+        driverPosition.copy(desired);
+        driverLook.copy(look);
+      } else {
+        const positionK = 1 - Math.exp(-dt * 16);
+        const lookK = 1 - Math.exp(-dt * 11);
+        driverPosition.lerp(desired, positionK);
+        driverLook.lerp(look, lookK);
+      }
+
+      camera.position.copy(driverPosition);
       initialized = true;
-      if (Math.abs(camera.fov - 68) > 0.05) {
-        camera.fov = 68;
+      const targetFov = 74 + speedFactor * 5;
+      if (Math.abs(camera.fov - targetFov) > 0.05) {
+        camera.fov = targetFov;
         camera.updateProjectionMatrix();
       }
       camera.up.set(0, 1, 0);
-      camera.lookAt(look);
+      camera.lookAt(driverLook);
       camera.updateMatrixWorld();
       return mode;
     }

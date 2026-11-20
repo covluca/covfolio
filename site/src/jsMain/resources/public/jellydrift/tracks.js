@@ -176,7 +176,7 @@ const TRACK_SPECS = [
     id: "sunny_coast",
     name: "Sunny Coast",
     subtitle: "Coastal Highway & Palms",
-    halfWidth: 10.5,
+    halfWidth: 16.5,
     gateCount: 12,
     maxBankRad: (5 * Math.PI) / 180,
     skyHex: "#79CBE8",
@@ -197,27 +197,24 @@ const TRACK_SPECS = [
       waterColor: 0x1fb6d4,
       accentColor: 0x3c83ef
     },
-    // Sweeping coastal circuit (~1030m perimeter, clean +Z start straight, elevation 0.5m..6.4m)
+    // Wide open coastal drift circuit with long connected corners (~1150m perimeter)
     controlPoints: [
-      [0, 0.5, -130],
+      [0, 0.5, -140],
       [0, 0.55, -20],
-      [36, 1.4, 72],
-      [118, 3.6, 102],
-      [172, 6.2, 42],
-      [158, 4.8, -52],
-      [96, 2.5, -96],
-      [134, 3.9, -168],
-      [74, 3.1, -225],
-      [-28, 1.4, -222],
-      [-48, 0.8, -190],
-      [0, 0.5, -185]
+      [50, 1.4, 90],
+      [145, 3.6, 120],
+      [190, 6.2, 50],
+      [170, 4.8, -65],
+      [100, 2.5, -110],
+      [75, 3.1, -240],
+      [-35, 1.4, -230]
     ]
   },
   {
     id: "canyon_loop",
     name: "Canyon Loop",
     subtitle: "Plateau Climb & Jump Crest",
-    halfWidth: 9.2,
+    halfWidth: 15.0,
     gateCount: 14,
     maxBankRad: (8 * Math.PI) / 180,
     skyHex: "#E8925C",
@@ -238,29 +235,26 @@ const TRACK_SPECS = [
       waterColor: null,
       accentColor: 0xf3db5b
     },
-    // Plateau climb + jump crest bridge + switchbacks (~1180m perimeter, clean +Z start straight, elevation 0.5m..14.0m)
+    // Open canyon drift loop with long connected switchbacks (~1300m perimeter)
     controlPoints: [
-      [0, 0.6, -135],
+      [0, 0.6, -140],
       [0, 0.8, -25],
-      [38, 3.6, 65],
-      [122, 8.8, 108],
-      [186, 13.8, 48],
-      [168, 11.4, -46],
-      [96, 7.0, -72],
-      [136, 10.4, -155],
-      [92, 12.6, -228],
-      [-22, 8.2, -240],
-      [-118, 3.4, -196],
-      [-128, 1.6, -120],
-      [-62, 0.8, -172],
-      [0, 0.6, -195]
+      [45, 3.6, 75],
+      [140, 8.8, 120],
+      [195, 13.8, 55],
+      [175, 11.4, -55],
+      [105, 7.0, -85],
+      [145, 10.4, -165],
+      [100, 12.6, -240],
+      [-30, 8.2, -250],
+      [-130, 3.4, -205]
     ]
   },
   {
     id: "neon_circuit",
     name: "Neon Circuit",
     subtitle: "Midnight Overpass & Chicanes",
-    halfWidth: 8.6,
+    halfWidth: 14.5,
     gateCount: 16,
     maxBankRad: (7 * Math.PI) / 180,
     skyHex: "#06080B",
@@ -281,22 +275,20 @@ const TRACK_SPECS = [
       waterColor: null,
       accentColor: 0xf3db5b
     },
-    // Figure-8 overpass: lower deck passes (0, 0.30, 0) along +Z;
-    // upper deck passes (0, 9.6, 0) along -X (>= 9.0m clearance!). (~1315m perimeter)
+    // Wide figure-8 overpass with broad drift areas and long connected corners (~1450m perimeter)
     controlPoints: [
-      [0, 0.3, -125],
+      [0, 0.3, -130],
       [0, 0.3, -45],
       [0, 0.3, 45],
-      [25, 0.4, 130],
-      [135, 3.2, 165],
-      [215, 7.6, 95],
-      [165, 9.6, 12],
-      [62, 9.6, 0],
-      [-62, 9.6, 0],
-      [-168, 8.4, -18],
-      [-205, 4.2, -115],
-      [-135, 0.8, -188],
-      [-32, 0.35, -175]
+      [35, 0.4, 140],
+      [150, 3.2, 175],
+      [230, 7.6, 100],
+      [175, 9.6, 15],
+      [65, 9.6, 0],
+      [-65, 9.6, 0],
+      [-175, 8.4, -20],
+      [-215, 4.2, -125],
+      [-145, 0.8, -195]
     ]
   }
 ];

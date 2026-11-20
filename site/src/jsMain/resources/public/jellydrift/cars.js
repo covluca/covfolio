@@ -1,5 +1,9 @@
 import * as THREE from "./vendor/three.module.min.js";
 
+// Hard 120 km/h ceiling — every car is tuned just under it, and physics
+// enforces the same cap as a backstop.
+export const MAX_TOP_SPEED_MS = 120 / 3.6;
+
 export const CARS = {
   jelly_gt: {
     id: "jelly_gt",
@@ -10,8 +14,8 @@ export const CARS = {
     primary: 0xe63946,
     accent: 0xffffff,
     trim: 0x1d2330,
-    maxSpeed: 44,
-    topSpeed: 44,
+    maxSpeed: 32.9,
+    topSpeed: 32.9,
     accel: 34,
     brake: 44,
     steerRate: 2.25,
@@ -40,8 +44,8 @@ export const CARS = {
     primary: 0xf4f5f7,
     accent: 0x181b22,
     trim: 0xe63946,
-    maxSpeed: 42,
-    topSpeed: 42,
+    maxSpeed: 32.8,
+    topSpeed: 32.8,
     accel: 32,
     brake: 42,
     steerRate: 2.35,
@@ -70,8 +74,8 @@ export const CARS = {
     primary: 0xf3db5b,
     accent: 0x222630,
     trim: 0xff9f1c,
-    maxSpeed: 40,
-    topSpeed: 40,
+    maxSpeed: 32.5,
+    topSpeed: 32.5,
     accel: 38,
     brake: 40,
     steerRate: 2.30,
@@ -100,8 +104,8 @@ export const CARS = {
     primary: 0x3c83ef,
     accent: 0x00e5ff,
     trim: 0x101828,
-    maxSpeed: 52,
-    topSpeed: 52,
+    maxSpeed: MAX_TOP_SPEED_MS,
+    topSpeed: MAX_TOP_SPEED_MS,
     accel: 37,
     brake: 48,
     steerRate: 2.15,

@@ -21,6 +21,11 @@ export function createAudio() {
   let engineGain = null;
   let oscA = null;
   let oscB = null;
+  let oscC = null;
+  let oscD = null;
+  let growlSrc = null;
+  let growlFilter = null;
+  let growlGain = null;
 
   let noiseBuffer = null;
   let screechSrc = null;
@@ -104,6 +109,8 @@ export function createAudio() {
         engineGain = ctx.createGain();
         engineGain.gain.value = 0.85;
 
+        // Layered procedural engine: fundamental (A/B), sub rumble (C),
+        // harmonic growl (D) -> lowpass -> engineGain -> master.
         oscA = ctx.createOscillator();
         oscA.type = "sawtooth";
         oscA.frequency.value = 58;
@@ -112,13 +119,25 @@ export function createAudio() {
         oscB.type = "triangle";
         oscB.frequency.value = 87;
 
+        oscC = ctx.createOscillator();
+        oscC.type = "sine";
+        oscC.frequency.value = 50;
+
+        oscD = ctx.createOscillator();
+        oscD.type = "sawtooth";
+        oscD.frequency.value = 50;
+
         oscA.connect(engineFilter);
         oscB.connect(engineFilter);
+        oscC.connect(engineFilter);
+        oscD.connect(engineFilter);
         engineFilter.connect(engineGain);
         engineGain.connect(master);
 
         oscA.start();
         oscB.start();
+        oscC.start();
+        oscD.start();
 
         // Looped bandpass noise for tire screech
         noiseBuffer = createNoiseBuffer(ctx);
@@ -139,6 +158,24 @@ export function createAudio() {
           screechFilter.connect(screechGain);
           screechGain.connect(master);
           screechSrc.start();
+
+          // Looped noise "engine growl" layer (procedural, no new asset)
+          growlSrc = ctx.createBufferSource();
+          growlSrc.buffer = noiseBuffer;
+          growlSrc.loop = true;
+
+          growlFilter = ctx.createBiquadFilter();
+          growlFilter.type = "lowpass";
+          growlFilter.frequency.value = 900;
+          growlFilter.Q.value = 2.0;
+
+          growlGain = ctx.createGain();
+          growlGain.gain.value = 0;
+
+          growlSrc.connect(growlFilter);
+          growlFilter.connect(growlGain);
+          growlGain.connect(master);
+          growlSrc.start();
         }
       } catch (_) {
         try {
@@ -148,7 +185,16 @@ export function createAudio() {
           if (oscB) oscB.stop();
         } catch (_) {}
         try {
+          if (oscC) oscC.stop();
+        } catch (_) {}
+        try {
+          if (oscD) oscD.stop();
+        } catch (_) {}
+        try {
           if (screechSrc) screechSrc.stop();
+        } catch (_) {}
+        try {
+          if (growlSrc) growlSrc.stop();
         } catch (_) {}
         try {
           if (ctx && ctx.state !== "closed" && typeof ctx.close === "function") {
@@ -162,9 +208,14 @@ export function createAudio() {
         engineGain = null;
         oscA = null;
         oscB = null;
+        oscC = null;
+        oscD = null;
         screechSrc = null;
         screechFilter = null;
         screechGain = null;
+        growlSrc = null;
+        growlFilter = null;
+        growlGain = null;
         noiseBuffer = null;
         failed = true;
         return false;
@@ -406,7 +457,7 @@ export function createAudio() {
   }
 
   function update(speedKmh = 0, drifting = false, boosting = false, boostOrSlip = 1) {
-    if (disposed || !ctx || !master || !oscA || !oscB || !engineFilter) return;
+    if (disposed || !ctx || !master || !oscA || !oscB || !oscC || !oscD || !engineFilter) return;
 
     const spd = Math.abs(finite(speedKmh, 0));
     const now = finite(ctx.currentTime, 0);
@@ -419,18 +470,48 @@ export function createAudio() {
     }
     wasBoosting = isBoosting;
 
-    // Engine pitch & lowpass filter cutoff
-    const boostPitch = isBoosting ? 24 : 0;
-    const baseFreq = pos(54 + Math.min(165, spd * 1.15) + boostPitch, 20);
+    // Engine RPM proxy from speed; load from boost/slip.
+    const rpm = clamp(spd * 1.1 + 60, 40, 340);
+    const rpmNorm = clamp((rpm - 40) / 300, 0, 1);
+    let load = 0;
+    if (isBoosting) {
+      load = 1;
+    } else if (typeof drifting === "number") {
+      load = clamp(Math.abs(drifting), 0, 1, 0);
+    } else if (drifting) {
+      load = typeof boostOrSlip === "number" ? clamp(Math.abs(boostOrSlip), 0.25, 1, 0.72) : 0.72;
+    }
+
+    // Layered procedural engine: A/B fundamentals rise with RPM, C sub-rumble
+    // fades as RPM climbs, D harmonic layer gets raspier with RPM and load.
+    const baseFreq = pos(45 + 295 * rpmNorm + (isBoosting ? 26 : 0), 20);
     safeSetTarget(oscA.frequency, baseFreq, now, 0.06);
-    safeSetTarget(oscB.frequency, pos(baseFreq * 1.5, 20), now, 0.06);
-    safeSetTarget(engineFilter.frequency, pos(500 + Math.min(2000, spd * 10) + (isBoosting ? 450 : 0), 80), now, 0.07);
+    safeSetTarget(oscB.frequency, pos(baseFreq * 1.35, 20), now, 0.06);
+    safeSetTarget(oscC.frequency, pos(baseFreq * 0.42, 20), now, 0.06);
+    safeSetTarget(oscD.frequency, pos(baseFreq * 3.0, 20), now, 0.06);
+
+    // Timbre shifts with RPM and load: brighter filter + harmonic mix up high,
+    // dirty growl noise layer while loaded.
+    safeSetTarget(engineFilter.frequency, pos(640 + 1600 * rpmNorm + 500 * load, 120), now, 0.07);
+    safeSetTarget(engineFilter.Q, pos(1.15 + 0.7 * rpmNorm + 0.5 * load, 0.6), now, 0.09);
+    safeSetTarget(engineGain.gain, pos(0.9 + 0.07 * rpmNorm + 0.06 * load, 0.2), now, 0.06);
+
+    safeSetTarget(oscC.gain, pos(0.15 + 0.10 * (1 - rpmNorm) + 0.05 * load, 0.05), now, 0.07);
+    safeSetTarget(oscD.gain, pos(0.08 + 0.24 * rpmNorm + 0.22 * load, 0.04), now, 0.07);
+
+    if (growlSrc && growlFilter && growlGain) {
+      const growlFreq = pos(500 + 1400 * rpmNorm + 600 * load, 120);
+      const targetGrowl = muted ? 0 : pos(0.04 + 0.26 * load + 0.10 * rpmNorm * (1 - load), 0.02);
+      safeSetTarget(growlFilter.frequency, growlFreq, now, 0.06);
+      safeSetTarget(growlFilter.Q, pos(2.0 + 0.8 * load, 0.5), now, 0.1);
+      safeSetTarget(growlGain.gain, targetGrowl, now, 0.06);
+    }
 
     // Master gain
     const targetMaster = muted ? 0 : isBoosting ? 0.075 : drifting ? 0.065 : 0.052;
     safeSetTarget(master.gain, targetMaster, now, 0.06);
 
-    // Slip-proportional tire screech
+    // Slip-proportional tire screech (unchanged)
     if (screechGain && screechFilter) {
       let slipNorm = 0;
       if (typeof drifting === "number") {
@@ -463,9 +544,12 @@ export function createAudio() {
 
     stopNode(oscA);
     stopNode(oscB);
+    stopNode(oscC);
+    stopNode(oscD);
     stopNode(screechSrc);
+    stopNode(growlSrc);
 
-    for (const node of [engineFilter, engineGain, screechFilter, screechGain, master]) {
+    for (const node of [engineFilter, engineGain, screechFilter, screechGain, growlFilter, growlGain, master]) {
       if (node && typeof node.disconnect === "function") {
         try {
           node.disconnect();
@@ -486,9 +570,14 @@ export function createAudio() {
     engineGain = null;
     oscA = null;
     oscB = null;
+    oscC = null;
+    oscD = null;
     screechSrc = null;
     screechFilter = null;
     screechGain = null;
+    growlSrc = null;
+    growlFilter = null;
+    growlGain = null;
     noiseBuffer = null;
   }
 
