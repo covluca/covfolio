@@ -297,7 +297,7 @@ private fun CarStatsPanel(carId: String) {
 @Composable
 private fun ControlsHint() {
     SpanText(
-        "WASD/Arrows · Space Drift · C Camera · V Hood · Esc Pause",
+        "WASD/Arrows · Space Handbrake · C Camera · V Hood · Esc Pause",
         modifier = Modifier
             .fontFamily(Fonts.DM_SANS)
             .fontSize(0.6.cssRem)
@@ -332,7 +332,7 @@ fun GarageMenu(
                 .styleModifier { property("text-shadow", "0 4px 24px rgba(243,219,91,0.25)") }
         )
         SpanText(
-            "Pick a circuit, a jelly car and a mode. Drift to charge your boost.",
+            "Pick a circuit, a jelly car and a mode. Handbrake into hairpins, drift to score.",
             modifier = Modifier
                 .margin(top = 2.px, bottom = 8.px)
                 .fontFamily(Fonts.DM_SANS)

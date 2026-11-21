@@ -376,7 +376,7 @@ private fun TouchControls(snapshot: JellyDriftSnapshot) {
     padButton("touch-brake", "BRK", Modifier.position(Position.Absolute).right(14.px).bottom(84.px)) { pad.brake = it }
     padButton("touch-throttle", "GAS", Modifier.position(Position.Absolute).right(14.px).bottom(18.px)) { pad.throttle = it }
     padButton("touch-drift", "DRFT", Modifier.position(Position.Absolute).right(80.px).bottom(18.px)) { pad.drift = it }
-    padButton("touch-boost", "BST", Modifier.position(Position.Absolute).right(80.px).bottom(84.px)) { pad.boost = it }
+    padButton("touch-boost", "HBK", Modifier.position(Position.Absolute).right(80.px).bottom(84.px)) { pad.drift = it }
 }
 
 internal object TouchBridgeHolder {

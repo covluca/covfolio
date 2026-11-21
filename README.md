@@ -40,6 +40,8 @@ All three circuits run at tight touge proportions (`halfWidth` 8.2–8.6m, ~870�
   - *Drift Rush* — Time-trial drifting challenges
   - *Grand Prix* — Multi-lap racing against AI opponents
 
+No boost/nitro system — drift score is earned purely through handbrake technique and corner speed.
+
 ### Controls
 | Input | Action |
 |-------|--------|
@@ -47,7 +49,7 @@ All three circuits run at tight touge proportions (`halfWidth` 8.2–8.6m, ~870�
 | `S` / `↓` | Brake/Reverse |
 | `A` / `←` | Steer Left |
 | `D` / `→` | Steer Right |
-| `Space` | Handbrake Drift |
+| `Space` | Handbrake (lock rear wheels for drift) |
 | `C` | Toggle Camera (3rd-person / Hood) |
 | `V` | Toggle Hood View |
 | `Esc` | Pause Menu |

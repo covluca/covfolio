@@ -521,12 +521,7 @@ export function createAudio() {
     const isBoosting = !!boosting;
 
     // Edge-trigger turbo boost SFX when boost begins, after-fire crackle when it ends
-    if (isBoosting && !wasBoosting) {
-      const tier = typeof boostOrSlip === "number" ? clamp(Math.round(boostOrSlip), 1, 3, 1) : 1;
-      playBoost(tier);
-    } else if (!isBoosting && wasBoosting) {
-      playAfterFire();
-    }
+    // (OC-4: cars never boost, so these are suppressed)
     wasBoosting = isBoosting;
 
     // Engine RPM proxy from speed; load from boost/slip.
@@ -567,7 +562,7 @@ export function createAudio() {
     }
 
     // Master gain
-    const targetMaster = muted ? 0 : isBoosting ? 0.082 : drifting ? 0.072 : 0.055;
+    const targetMaster = muted ? 0 : drifting ? 0.078 : 0.055;
     safeSetTarget(master.gain, targetMaster, now, 0.045);
 
     // Slip-proportional tire screech (unchanged)

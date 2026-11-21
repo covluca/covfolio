@@ -64,3 +64,10 @@
   - Added touge track subtitles to `JellyDriftMenus.kt`: "Cliffside switchback touge" (sunny_coast), "Red-rock mountain pass" (canyon_loop), "Midnight expressway touge" (neon_circuit).
   - Updated `README.md` with touge overhaul documentation: circuit descriptions, proportions, spline geometry notes, and updated ad placement terminology.
 - **Ready for**: `copilot` to consume `userData.corners` and `driverEyeRootAnchor`; `antigravity` track tuning complete. No tests or `kobwebExport` run per sprint rules.
+- **Wave 2 (`OC-4` — `DONE`)**:
+  - **`JellyDriftMenus.kt`**: Updated garage copy from "Drift to charge your boost" to "Handbrake into hairpins, drift to score"; updated `ControlsHint` from "Space Drift" to "Space Handbrake".
+  - **`JellyDriftHud.kt`**: Replaced `BST` touch button with `HBK` handbrake touch trigger (testid `touch-boost` preserved); button now calls `setTouchInput(drift=true)` instead of `boost=true`.
+  - **`vfx.js`**: Removed boost flame group entirely (kept null reference for API compatibility); removed after-fire burst on boost end; emphasized handbrake drift smoke (2 puffs per rear tire per tick).
+  - **`audio.js`**: Suppressed boost start/after-fire one-shots (cars never boost); raised drift master gain to 0.078; screech tuning unchanged (already optimized for handbrake lockup).
+  - **`README.md`**: Updated controls table (`Space` = "Handbrake (lock rear wheels for drift)"); added "No boost/nitro system" note.
+  - `node --check` passed for `vfx.js` and `audio.js`. No tests or `kobwebExport` run.

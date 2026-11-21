@@ -203,49 +203,9 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
 
   let sparkCursor = 0;
 
-  // 4. Pooled Boost Exhaust Flames
-  const flameGroup = new THREE.Group();
-  flameGroup.name = "vfx-boost-flames";
-  flameGroup.visible = false;
-
-  const outerFlameGeo = new THREE.ConeGeometry(0.18, 0.95, 10);
-  outerFlameGeo.rotateX(-Math.PI / 2);
-  outerFlameGeo.translate(0, 0, -0.48);
-  disposables.push(outerFlameGeo);
-
-  const innerFlameGeo = new THREE.ConeGeometry(0.09, 0.56, 8);
-  innerFlameGeo.rotateX(-Math.PI / 2);
-  innerFlameGeo.translate(0, 0, -0.28);
-  disposables.push(innerFlameGeo);
-
-  const outerFlameMat = new THREE.MeshBasicMaterial({
-    color: 0xff9a1f,
-    transparent: true,
-    opacity: 0.85,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  });
-  const innerFlameMat = new THREE.MeshBasicMaterial({
-    color: 0xfff5d6,
-    transparent: true,
-    opacity: 0.95,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  });
-  disposables.push(outerFlameMat, innerFlameMat);
-
-  const flamePairs = [];
-  for (const xOff of [-0.46, 0.46]) {
-    const pipe = new THREE.Group();
-    pipe.position.set(xOff, 0.34, -2.12);
-    const outer = new THREE.Mesh(outerFlameGeo, outerFlameMat);
-    const inner = new THREE.Mesh(innerFlameGeo, innerFlameMat);
-    pipe.add(outer);
-    pipe.add(inner);
-    flameGroup.add(pipe);
-    flamePairs.push(pipe);
-  }
-  if (scene && typeof scene.add === "function") scene.add(flameGroup);
+  // Boost flames removed (OC-4): cars never boost, handbrake drift is the focus.
+  // Kept a null flameGroup reference for API compatibility.
+  const flameGroup = null;
 
   // Optional self-cleaning 2D speed-lines canvas overlay
   let overlayCanvas = null;
@@ -532,7 +492,8 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
           layRibbon(1, rrX, py, rrZ, surfNorm, yaw, driftIntensity);
         }
 
-        // Layered smoke: two puffs per rear tire with jitter for volume
+        // Handbrake drift smoke: two puffs per rear tire with jitter for volume
+        // (emphasized for Spacebar handbrake lockup feel)
         smokeTimer += dtSafe;
         if (smokeTimer >= SMOKE_INTERVAL) {
           smokeTimer = 0;
@@ -581,58 +542,8 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
       }
       lastCollisionPulse = colPulse;
 
-      // Boost exhaust flames + embers
-      if (boostActive) {
-        flameGroup.visible = true;
-        flameGroup.position.set(px, py + finiteOr(player?.spring?.bounceY, 0), pz);
-        flameGroup.rotation.set(
-          (finiteOr(player?.surfacePitchDeg, 0) * Math.PI) / 180,
-          yaw,
-          0
-        );
-
-        const outerHex =
-          boostTier >= 3 ? 0xd946ef : boostTier === 2 ? 0x00e5ff : 0xff9a1f;
-        const innerHex = boostTier >= 2 ? 0xffffff : 0xfff5c0;
-        outerFlameMat.color.setHex(outerHex);
-        innerFlameMat.color.setHex(innerHex);
-
-        const flicker = 0.85 + 0.35 * Math.sin(elapsed * 55) + Math.random() * 0.2;
-        const tierLen = 0.85 + boostTier * 0.35;
-        for (let f = 0; f < flamePairs.length; f++) {
-          flamePairs[f].scale.set(0.85 + boostTier * 0.12, 0.85 + boostTier * 0.12, tierLen * flicker);
-        }
-        emit(rearCenterX, py + 0.34, rearCenterZ, 1.0, boostTier >= 2 ? 0.85 : 0.55, 0.25, 0.28);
-      } else {
-        flameGroup.visible = false;
-      }
-
-      // After-fire: a short pop of unburnt fuel when the boost cuts out
-      if (wasBoosting && !boostActive) {
-        const exDist = 2.12;
-        const exX = px - sinY * exDist;
-        const exZ = pz - cosY * exDist;
-        const exY = py + finiteOr(player?.spring?.bounceY, 0) + 0.32;
-        for (const side of [1, -1]) {
-          const px2 = exX + leftX * 0.46 * side;
-          const pz2 = exZ + leftZ * 0.46 * side;
-          for (let p = 0; p < 5; p++) {
-            emit(
-              px2 + (Math.random() - 0.5) * 0.22,
-              exY + (Math.random() - 0.5) * 0.14,
-              pz2 + (Math.random() - 0.5) * 0.22,
-              1.0,
-              0.5 + Math.random() * 0.2,
-              0.14,
-              0.24 + Math.random() * 0.18
-            );
-          }
-          emitKerbSparks(px2, exY - 0.1, pz2, side * 0.4, 0.55);
-        }
-      }
-      wasBoosting = boostActive;
-    } else if (!boostActive) {
-      flameGroup.visible = false;
+      // Boost flames removed (OC-4): cars never boost.
+      // Handbrake drift smoke above is the primary feedback cue.
     }
 
     // Advance smoke particle ring buffer
@@ -661,7 +572,7 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
         smokeColors[idx3 + 2] = smokeBaseCol[idx3 + 2] * fade;
       }
     }
-    if (smokeDirty || driftActive || boostActive) {
+    if (smokeDirty || driftActive) {
       smokeGeo.attributes.position.needsUpdate = true;
       smokeGeo.attributes.color.needsUpdate = true;
     }
@@ -717,7 +628,6 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
     smokeCursor = 0;
     sparkCursor = 0;
     lastCollisionPulse = 0;
-    flameGroup.visible = false;
     speedLinesState = computeSpeedLinesState();
 
     for (let i = 0; i < MAX_SKIDS; i++) {
@@ -752,7 +662,6 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
       scene.remove(skidMesh);
       scene.remove(smokePoints);
       scene.remove(sparkPoints);
-      scene.remove(flameGroup);
     }
     for (let i = 0; i < disposables.length; i++) {
       const d = disposables[i];
