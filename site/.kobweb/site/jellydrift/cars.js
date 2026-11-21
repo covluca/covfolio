@@ -495,12 +495,63 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
     cabin.add(cp);
   }
 
-  // --- 4. Open Interior Cockpit: Low Dash, Rotating Steering Wheel, Driver Head, Angled Center Console ---
-  // Low-profile dash (top <= 0.84m so driver eye y=1.04 sees clearly over the hood!)
-  const dashGeo = trackGeo(new THREE.BoxGeometry(w * 0.78, 0.24, 0.38));
-  const dash = new THREE.Mesh(dashGeo, dashMat);
-  dash.position.set(0, 0.68, 0.74);
-  jellyChassis.add(dash);
+  // --- 4. Open Interior Cockpit: Sculpted Wrap-Around Dash & Recessed Center Console ---
+  // The dash cowl sweeps door-to-door with a hard height cap below the driver's
+  // sightline so the road stays visible over the hood in DRIVER/HOOD views.
+  const dashTopY = 0.80;
+  const dashCowl = new THREE.Group();
+  dashCowl.name = "dash-cowl";
+  jellyChassis.add(dashCowl);
+
+  // Center dash panels split around a center-console opening so the display
+  // stack stays visible (never buried behind a solid dash slab)
+  const cowlPanelW = Math.max(0.20, w * 0.31 - 0.30);
+  const cowlPanelGeo = trackGeo(new THREE.BoxGeometry(cowlPanelW, 0.20, 0.36));
+  for (const side of [-1, 1]) {
+    const panel = new THREE.Mesh(cowlPanelGeo, dashMat);
+    panel.position.set(side * (0.30 + cowlPanelW * 0.5), 0.70, 0.76);
+    panel.rotation.x = -0.30;
+    dashCowl.add(panel);
+  }
+
+  // Side wings sweep into the door sills for a wrap-around cockpit cowl
+  const cowlWingGeo = trackGeo(new THREE.BoxGeometry(0.30, 0.17, 0.48));
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Mesh(cowlWingGeo, dashMat);
+    wing.position.set(side * (w * 0.31), 0.66, 0.75);
+    wing.rotation.set(-0.22, side * 0.42, 0);
+    dashCowl.add(wing);
+  }
+
+  // Flat dash cap: hard ceiling on dash height, keeps windshield sightline clear
+  const capPanelW = Math.max(0.16, w * 0.35 - 0.30);
+  const capPanelGeo = trackGeo(new THREE.BoxGeometry(capPanelW, 0.07, 0.30));
+  for (const side of [-1, 1]) {
+    const capPanel = new THREE.Mesh(capPanelGeo, dashMat);
+    capPanel.position.set(side * (0.30 + capPanelW * 0.5), dashTopY - 0.035, 0.76);
+    dashCowl.add(capPanel);
+  }
+
+  // Driver instrument binnacle tucked in front of the wheel
+  const binnacleGeo = trackGeo(new THREE.BoxGeometry(0.42, 0.08, 0.24));
+  const binnacle = new THREE.Mesh(binnacleGeo, dashMat);
+  binnacle.position.set(-0.25, 0.77, 0.66);
+  binnacle.rotation.x = -0.16;
+  dashCowl.add(binnacle);
+
+  // Lower center console stack between the seats
+  const consoleStackGeo = trackGeo(new THREE.BoxGeometry(0.38, 0.34, 0.44));
+  const consoleStack = new THREE.Mesh(consoleStackGeo, dashMat);
+  consoleStack.position.set(0, 0.55, 0.46);
+  consoleStack.rotation.x = -0.10;
+  jellyChassis.add(consoleStack);
+
+  // Shifter hump on the console tunnel
+  const shifterHumpGeo = trackGeo(new THREE.BoxGeometry(0.16, 0.07, 0.20));
+  const shifterHump = new THREE.Mesh(shifterHumpGeo, trimMat);
+  shifterHump.position.set(0, 0.72, 0.32);
+  shifterHump.rotation.x = -0.08;
+  jellyChassis.add(shifterHump);
 
   // Driver Seat & Head/Helmet
   const seatGeo = trackGeo(new THREE.BoxGeometry(0.46, 0.52, 0.16));
@@ -564,19 +615,61 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
   const centerCap = new THREE.Mesh(centerCapGeo, accentMat);
   steerWheel.add(centerCap);
 
-  // Angled Center Console Bezel at (0.0, 0.80, 0.74) oriented via lookAt(-0.25, 1.04, 0.08)
-  // while carRoot and jellyChassis are at identity origin!
+  // --- 4b. Recessed Center-Console Infotainment (angled up at the driver's eyes) ---
+  // The screen lives in the center dash tower: housing behind, brow above, console
+  // stack below, so it reads as embedded hardware instead of a tabletop sign.
+  const displayW = 0.44;
+  const displayH = 0.145;
+
+  // Center dash tower / stack face that the display is sunk into
+  const centerTowerGeo = trackGeo(new THREE.BoxGeometry(0.56, 0.30, 0.16));
+  const centerTower = new THREE.Mesh(centerTowerGeo, dashMat);
+  centerTower.position.set(0, 0.75, 0.83);
+  jellyChassis.add(centerTower);
+
+  // Neck bridging the console tunnel up to the display housing
+  const consoleNeckGeo = trackGeo(new THREE.BoxGeometry(0.44, 0.10, 0.16));
+  const consoleNeck = new THREE.Mesh(consoleNeckGeo, dashMat);
+  consoleNeck.position.set(0, 0.67, 0.70);
+  jellyChassis.add(consoleNeck);
+
   const consoleBezel = new THREE.Group();
   consoleBezel.name = "console-bezel";
   consoleBezel.position.set(0.0, 0.80, 0.74);
-  consoleBezel.lookAt(-0.25, 1.04, 0.08);
+  consoleBezel.lookAt(-0.25, 1.08, 0.08);
   jellyChassis.add(consoleBezel);
 
-  const bezelHousingGeo = trackGeo(new THREE.BoxGeometry(0.46, 0.17, 0.04));
-  const bezelHousing = new THREE.Mesh(bezelHousingGeo, trimMat);
-  consoleBezel.add(bezelHousing);
+  // Matte housing sunk into the console stack (four bezel bars + inset screen)
+  const panelW = 0.50;
+  const panelH = 0.19;
+  const panelDepth = 0.04;
+  const panelZ = -0.005;
+  const consoleTopMargin = (panelH - displayH) * 0.5;
+  const consoleSideMargin = (panelW - displayW) * 0.5;
 
-  const screenGeo = trackGeo(new THREE.PlaneGeometry(0.42, 0.135));
+  const consoleTopBarGeo = trackGeo(new THREE.BoxGeometry(panelW, consoleTopMargin, panelDepth));
+  const consoleTopBar = new THREE.Mesh(consoleTopBarGeo, trimMat);
+  consoleTopBar.position.set(0, (panelH - consoleTopMargin) * 0.5, panelZ);
+  consoleBezel.add(consoleTopBar);
+
+  const consoleBottomBar = new THREE.Mesh(consoleTopBarGeo, trimMat);
+  consoleBottomBar.position.set(0, -(panelH - consoleTopMargin) * 0.5, panelZ);
+  consoleBezel.add(consoleBottomBar);
+
+  const consoleSideBarGeo = trackGeo(new THREE.BoxGeometry(consoleSideMargin, displayH, panelDepth));
+  for (const side of [-1, 1]) {
+    const sideBar = new THREE.Mesh(consoleSideBarGeo, trimMat);
+    sideBar.position.set(side * (panelW - consoleSideMargin) * 0.5, 0, panelZ);
+    consoleBezel.add(sideBar);
+  }
+
+  const consoleFloorGeo = trackGeo(new THREE.BoxGeometry(panelW, panelH, 0.01));
+  const consoleFloor = new THREE.Mesh(consoleFloorGeo, trimMat);
+  consoleFloor.position.set(0, 0, panelZ - panelDepth * 0.5);
+  consoleBezel.add(consoleFloor);
+
+  // Screen plane, recessed inside the bezel (DOM ad overlay maps onto it)
+  const screenGeo = trackGeo(new THREE.PlaneGeometry(displayW, displayH));
   const screenMat = trackMat(
     new THREE.MeshBasicMaterial({
       color: 0x0f172a,
@@ -584,49 +677,227 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
     })
   );
   const screenFace = new THREE.Mesh(screenGeo, screenMat);
-  screenFace.position.z = 0.022;
+  screenFace.position.z = 0.004;
   consoleBezel.add(screenFace);
+
+  // Overhanging cowl brow shades the screen top for the "sunken" look
+  const bezelBrowGeo = trackGeo(new THREE.BoxGeometry(0.56, 0.05, 0.13));
+  const bezelBrow = new THREE.Mesh(bezelBrowGeo, trimMat);
+  bezelBrow.position.set(0, 0.135, 0.02);
+  bezelBrow.rotation.x = 0.30;
+  consoleBezel.add(bezelBrow);
+
+  // Thin accent underline below the display
+  const bezelUnderlineGeo = trackGeo(new THREE.BoxGeometry(displayW, 0.012, 0.008));
+  const bezelUnderline = new THREE.Mesh(bezelUnderlineGeo, accentMat);
+  bezelUnderline.position.set(0, -displayH * 0.5 - 0.012, 0.022);
+  consoleBezel.add(bezelUnderline);
 
   const consoleAnchor = new THREE.Object3D();
   consoleAnchor.name = "console-anchor";
-  consoleAnchor.position.set(0, 0, 0.025);
+  consoleAnchor.position.set(0, 0, 0.006);
   consoleBezel.add(consoleAnchor);
 
-  // --- 5. Exterior Illuminated Roof Ad Carrier on jellyChassis ---
-  const carrierGroup = new THREE.Group();
-  carrierGroup.name = "roof-carrier";
-  carrierGroup.position.set(0, roofTopY, -0.15);
-  jellyChassis.add(carrierGroup);
+  // Frozen contract: corner children in screen-viewer orientation (driver eye).
+  // Local +Z points out of the screen toward the driver, +X is the viewer's
+  // screen-right (driver right = car -X), +Y is screen-up.
+  const consoleHalfW = displayW * 0.5;
+  const consoleHalfH = displayH * 0.5;
+  const consoleCorners = {
+    tl: new THREE.Object3D(),
+    tr: new THREE.Object3D(),
+    bl: new THREE.Object3D(),
+    br: new THREE.Object3D()
+  };
+  consoleCorners.tl.name = "console-corner-tl";
+  consoleCorners.tl.position.set(-consoleHalfW, consoleHalfH, 0);
+  consoleCorners.tr.name = "console-corner-tr";
+  consoleCorners.tr.position.set(consoleHalfW, consoleHalfH, 0);
+  consoleCorners.bl.name = "console-corner-bl";
+  consoleCorners.bl.position.set(-consoleHalfW, -consoleHalfH, 0);
+  consoleCorners.br.name = "console-corner-br";
+  consoleCorners.br.position.set(consoleHalfW, -consoleHalfH, 0);
+  consoleAnchor.add(consoleCorners.tl);
+  consoleAnchor.add(consoleCorners.tr);
+  consoleAnchor.add(consoleCorners.bl);
+  consoleAnchor.add(consoleCorners.br);
+  consoleAnchor.userData.corners = consoleCorners;
+  consoleAnchor.userData.aspect = displayW / displayH;
 
-  const strutGeo = trackGeo(new THREE.BoxGeometry(0.06, 0.18, 0.08));
-  for (const sx of [-0.46, 0.46]) {
-    for (const sz of [-0.22, 0.22]) {
-      const strut = new THREE.Mesh(strutGeo, trimMat);
-      strut.position.set(sx, 0.09, sz);
-      carrierGroup.add(strut);
+  // --- 5. Flush Aero Roof Pod (replaces the old four-stilt "post sign" carrier) ---
+  // Seated directly on roofTopY: low base + sleek shark-fin spine + rear-angled
+  // fin housing a recessed LED display. No struts, no floating billboard.
+  const podGroup = new THREE.Group();
+  podGroup.name = "roof-pod";
+  podGroup.position.set(0, roofTopY, 0);
+  jellyChassis.add(podGroup);
+
+  const podW = 1.18;
+  const podBaseH = 0.075;
+  const podBaseGeo = trackGeo(new THREE.BoxGeometry(podW, podBaseH, 1.00));
+  const podBase = new THREE.Mesh(podBaseGeo, trimMat);
+  podBase.position.set(0, podBaseH * 0.5, -0.22);
+  podGroup.add(podBase);
+
+  // Rear fin housing the display face
+  const finH = 0.42;
+  const finGeo = trackGeo(new THREE.BoxGeometry(podW, finH, 0.30));
+  const fin = new THREE.Mesh(finGeo, isBuggy ? accentMat : bodyMat);
+  fin.position.set(0, finH * 0.5, -0.55);
+  podGroup.add(fin);
+
+  // Streamlined shark-fin spine: low at the windscreen, rising into the fin
+  const spineGeo = trackGeo(new THREE.BoxGeometry(podW * 0.88, 0.035, 0.80));
+  const spine = new THREE.Mesh(spineGeo, isBuggy ? bodyMat : trimMat);
+  spine.position.set(0, 0.25, -0.06);
+  spine.rotation.x = 0.44;
+  podGroup.add(spine);
+
+  // Per-car pod detailing so silhouettes stay distinct
+  if (isBuggy) {
+    // Roll-cage rails bracketing the pod
+    const railGeo = trackGeo(new THREE.CylinderGeometry(0.04, 0.04, 0.98, 8));
+    railGeo.rotateX(Math.PI / 2);
+    for (const side of [-1, 1]) {
+      const rail = new THREE.Mesh(railGeo, accentMat);
+      rail.position.set(side * (podW * 0.44), 0.095, -0.18);
+      rail.rotation.x = 0.16;
+      podGroup.add(rail);
     }
+  } else if (isHyper) {
+    // Low-slung aero lip + cyan edge strakes
+    const lipGeo = trackGeo(new THREE.BoxGeometry(podW * 1.04, 0.025, 0.86));
+    const lip = new THREE.Mesh(lipGeo, accentMat);
+    lip.position.set(0, 0.10, -0.24);
+    podGroup.add(lip);
+    const strakeGeo = trackGeo(new THREE.BoxGeometry(0.02, 0.06, 0.62));
+    for (const side of [-1, 1]) {
+      const strake = new THREE.Mesh(strakeGeo, accentMat);
+      strake.position.set(side * (podW * 0.5 + 0.01), 0.13, -0.28);
+      podGroup.add(strake);
+    }
+  } else if (isTofu) {
+    // Panda accent cap along the spine
+    const spineCapGeo = trackGeo(new THREE.BoxGeometry(podW * 0.42, 0.03, 0.74));
+    const spineCap = new THREE.Mesh(spineCapGeo, accentMat);
+    spineCap.position.set(0, 0.245, -0.06);
+    spineCap.rotation.x = 0.44;
+    podGroup.add(spineCap);
+  } else {
+    // Jelly GT racing stripe along the pod spine
+    const podStripeGeo = trackGeo(new THREE.BoxGeometry(0.20, 0.03, 0.74));
+    const podStripe = new THREE.Mesh(podStripeGeo, accentMat);
+    podStripe.position.set(0, 0.245, -0.06);
+    podStripe.rotation.x = 0.44;
+    podGroup.add(podStripe);
   }
 
-  const rackBarGeo = trackGeo(new THREE.BoxGeometry(1.12, 0.07, 0.62));
-  const rackBar = new THREE.Mesh(rackBarGeo, trimMat);
-  rackBar.position.set(0, 0.18, 0);
-  carrierGroup.add(rackBar);
+  // Rear-angled recessed LED display face
+  const roofDisplayW = 1.05;
+  const roofDisplayH = 0.34;
+  const faceH = 0.40;
+  const faceW = 1.10;
+  const faceCenterY = 0.21;
+  const faceCenterZ = -0.72;
 
-  const rackGlowGeo = trackGeo(new THREE.BoxGeometry(1.06, 0.04, 0.64));
-  const rackGlow = new THREE.Mesh(rackGlowGeo, roofLightMat);
-  rackGlow.position.set(0, 0.18, 0);
-  carrierGroup.add(rackGlow);
+  const faceGroup = new THREE.Group();
+  faceGroup.name = "roof-pod-face";
+  faceGroup.position.set(0, faceCenterY, faceCenterZ);
+  faceGroup.lookAt(0, faceCenterY + 0.12, faceCenterZ - 1.0);
+  podGroup.add(faceGroup);
+
+  // Recessed display housing: four bezel bars around an inset screen cavity
+  const frameDepth = 0.03;
+  const frameInset = 0.005;
+  const sideBarW = (faceW - roofDisplayW) * 0.5;
+  const topBarH = (faceH - roofDisplayH) * 0.5;
+
+  const topBarGeo = trackGeo(new THREE.BoxGeometry(faceW, topBarH, frameDepth));
+  const topBar = new THREE.Mesh(topBarGeo, trimMat);
+  topBar.position.set(0, (faceH - topBarH) * 0.5, frameInset);
+  faceGroup.add(topBar);
+
+  const bottomBar = new THREE.Mesh(topBarGeo, trimMat);
+  bottomBar.position.set(0, -(faceH - topBarH) * 0.5, frameInset);
+  faceGroup.add(bottomBar);
+
+  const sideBarGeo = trackGeo(new THREE.BoxGeometry(sideBarW, roofDisplayH, frameDepth));
+  for (const side of [-1, 1]) {
+    const sideBar = new THREE.Mesh(sideBarGeo, trimMat);
+    sideBar.position.set(side * (faceW - sideBarW) * 0.5, 0, frameInset);
+    faceGroup.add(sideBar);
+  }
+
+  // Cavity floor behind the screen
+  const cavityFloorGeo = trackGeo(new THREE.BoxGeometry(faceW, faceH, 0.01));
+  const cavityFloor = new THREE.Mesh(cavityFloorGeo, trimMat);
+  cavityFloor.position.set(0, 0, frameInset - frameDepth);
+  faceGroup.add(cavityFloor);
+
+  const podScreenMat = trackMat(
+    new THREE.MeshBasicMaterial({ color: 0x05080f, side: THREE.FrontSide })
+  );
+  const podScreenGeo = trackGeo(new THREE.PlaneGeometry(roofDisplayW, roofDisplayH));
+  const podScreen = new THREE.Mesh(podScreenGeo, podScreenMat);
+  podScreen.position.set(0, 0, -0.012);
+  faceGroup.add(podScreen);
+
+  // Slim self-lit LED status bar above the display (per-car accent color)
+  const podLedGeo = trackGeo(new THREE.BoxGeometry(roofDisplayW * 0.98, 0.016, 0.012));
+  const podLed = new THREE.Mesh(podLedGeo, roofLightMat);
+  podLed.position.set(0, (faceH - topBarH) * 0.5, frameInset + frameDepth * 0.5);
+  faceGroup.add(podLed);
+
+  // Overhanging bezel brow turns the display into recessed hardware
+  const podBrowGeo = trackGeo(new THREE.BoxGeometry(faceW * 1.02, 0.045, 0.10));
+  const podBrow = new THREE.Mesh(podBrowGeo, trimMat);
+  podBrow.position.set(0, faceH * 0.5 + 0.012, 0.012);
+  podBrow.rotation.x = 0.26;
+  faceGroup.add(podBrow);
 
   const roofAnchor = new THREE.Object3D();
   roofAnchor.name = "roof-anchor";
-  roofAnchor.position.set(0, roofTopY + 0.34, -0.15);
-  jellyChassis.add(roofAnchor);
+  roofAnchor.position.set(0, 0, -0.012);
+  faceGroup.add(roofAnchor);
+
+  // Frozen contract: corner children in rear-chase-view orientation.
+  // Local +Z points out of the display toward the chase camera, +X is the
+  // viewer's screen-right (rear camera right = car -X), +Y is screen-up.
+  const roofHalfW = roofDisplayW * 0.5;
+  const roofHalfH = roofDisplayH * 0.5;
+  const roofCorners = {
+    tl: new THREE.Object3D(),
+    tr: new THREE.Object3D(),
+    bl: new THREE.Object3D(),
+    br: new THREE.Object3D()
+  };
+  roofCorners.tl.name = "roof-corner-tl";
+  roofCorners.tl.position.set(-roofHalfW, roofHalfH, 0);
+  roofCorners.tr.name = "roof-corner-tr";
+  roofCorners.tr.position.set(roofHalfW, roofHalfH, 0);
+  roofCorners.bl.name = "roof-corner-bl";
+  roofCorners.bl.position.set(-roofHalfW, -roofHalfH, 0);
+  roofCorners.br.name = "roof-corner-br";
+  roofCorners.br.position.set(roofHalfW, -roofHalfH, 0);
+  roofAnchor.add(roofCorners.tl);
+  roofAnchor.add(roofCorners.tr);
+  roofAnchor.add(roofCorners.bl);
+  roofAnchor.add(roofCorners.br);
+  roofAnchor.userData.corners = roofCorners;
+  roofAnchor.userData.aspect = roofDisplayW / roofDisplayH;
 
   // Camera anchors on jellyChassis
   const driverEyeAnchor = new THREE.Object3D();
   driverEyeAnchor.name = "driver-eye-anchor";
   driverEyeAnchor.position.set(-0.25, 1.04, 0.08);
   jellyChassis.add(driverEyeAnchor);
+
+  // Frozen contract: rigid driver eye frame on carRoot (not jellyChassis) so the
+  // DRIVER camera never bounces out of the roof at speed or during jelly squash.
+  const driverEyeRootAnchor = new THREE.Object3D();
+  driverEyeRootAnchor.name = "driver-eye-root-anchor";
+  driverEyeRootAnchor.position.set(-0.25, 1.08, 0.08);
+  carRoot.add(driverEyeRootAnchor);
 
   const driverLookTarget = new THREE.Object3D();
   driverLookTarget.name = "driver-look-target";
@@ -726,10 +997,14 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
     wheels,
     steerWheel,
     driverHead,
+    dashCowl,
+    consoleStack,
     consoleBezel,
     roofAnchor,
     consoleAnchor,
+    roofPod: podGroup,
     driverEyeAnchor,
+    driverEyeRootAnchor,
     driverLookTarget,
     hoodAnchor,
     updateVisuals,

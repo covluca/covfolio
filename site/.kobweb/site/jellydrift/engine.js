@@ -550,8 +550,8 @@ export function createJellyDriftEngine(config) {
       player.vLateral = 0;
       player.slip = 0;
       player.drifting = false;
-      player.boostCharge = 1.0;
-      player.boostTier = 3;
+      player.boostCharge = 0;
+      player.boostTier = 0;
       player.boostTime = 0;
       syncPlayerVisual(0);
       cameraRig.resetFollow(player.yaw);
@@ -679,10 +679,10 @@ export function createJellyDriftEngine(config) {
     world.playerRoot.rotation.set(surfPitchRad, player.yaw, surfRollRad, "YXZ");
 
     const spring = player.spring || { pitchDeg: 0, rollDeg: 0, squash: 0, bounceY: 0 };
-    world.chassis.position.y = clamp(spring.bounceY, -0.45, 0.55);
+    world.chassis.position.y = clamp(spring.bounceY, -0.26, 0.30);
     world.chassis.rotation.x = ((spring.pitchDeg || 0) * Math.PI) / 180;
     world.chassis.rotation.z = (-(spring.rollDeg || 0) * Math.PI) / 180;
-    const sq = clamp(spring.squash || 0, -0.25, 0.35);
+    const sq = clamp(spring.squash || 0, -0.15, 0.20);
     world.chassis.scale.set(1 + 0.5 * sq, 1 - sq, 1 + 0.5 * sq);
 
     const wheelSpin = dt > 0 ? ((player.speed || 0) * dt) / (world.def.wheelRadius || 0.36) : 0;
@@ -716,10 +716,10 @@ export function createJellyDriftEngine(config) {
       aiMesh.carRoot.rotation.set(surfPitchRad, ai.yaw, surfRollRad, "YXZ");
 
       const spring = ai.spring || { pitchDeg: 0, rollDeg: 0, squash: 0, bounceY: 0 };
-      aiMesh.jellyChassis.position.y = clamp(spring.bounceY, -0.4, 0.45);
+      aiMesh.jellyChassis.position.y = clamp(spring.bounceY, -0.24, 0.28);
       aiMesh.jellyChassis.rotation.x = ((spring.pitchDeg || 0) * Math.PI) / 180;
       aiMesh.jellyChassis.rotation.z = (-(spring.rollDeg || 0) * Math.PI) / 180;
-      const sq = clamp(spring.squash || 0, -0.2, 0.25);
+      const sq = clamp(spring.squash || 0, -0.15, 0.20);
       aiMesh.jellyChassis.scale.set(1 + 0.5 * sq, 1 - sq, 1 + 0.5 * sq);
 
       const wheelSpin = dt > 0 ? ((ai.speed || 0) * dt) / ((ai.def && ai.def.wheelRadius) || 0.36) : 0;
@@ -737,13 +737,13 @@ export function createJellyDriftEngine(config) {
     if (state.phase === "GARAGE" || state.phase === "FINISHED") {
       garageAngle += dt * (state.phase === "GARAGE" ? 0.24 : 0.35);
       const car = world.playerRoot.position;
-      const radius = state.phase === "GARAGE" ? 8.8 : 10.5;
+      const radius = state.phase === "GARAGE" ? 6.6 : 7.8;
       camera.position.set(
         car.x + Math.sin(garageAngle) * radius,
-        car.y + 3.2 + Math.sin(garageAngle * 0.8) * 0.65,
+        car.y + 2.65 + Math.sin(garageAngle * 0.8) * 0.45,
         car.z + Math.cos(garageAngle) * radius
       );
-      camera.lookAt(car.x, car.y + 1.0, car.z);
+      camera.lookAt(car.x, car.y + 0.9, car.z);
       camera.updateMatrixWorld();
       return;
     }
@@ -1005,7 +1005,7 @@ export function createJellyDriftEngine(config) {
             dt,
             player,
             state.phase === "RACING" && player.drifting,
-            state.phase === "RACING" && (player.boostTime || 0) > 0
+            false
           );
         } catch (_) {
           /* visual-only */
@@ -1015,7 +1015,7 @@ export function createJellyDriftEngine(config) {
       updateAds();
 
       if (state.phase === "RACING" && player) {
-        audio.update(speedKmh(player), player.drifting, (player.boostTime || 0) > 0);
+        audio.update(speedKmh(player), player.drifting, false);
       } else {
         audio.update(0, false, false);
       }
@@ -1058,7 +1058,7 @@ export function createJellyDriftEngine(config) {
     else if (code === "KeyA" || code === "ArrowLeft") keyInput.left = true;
     else if (code === "KeyD" || code === "ArrowRight") keyInput.right = true;
     else if (code === "Space") keyInput.drift = true;
-    else if (code === "ShiftLeft" || code === "ShiftRight") keyInput.boost = true;
+    else if (code === "ShiftLeft" || code === "ShiftRight") keyInput.boost = false;
     else if (code === "KeyB") reverseLook = true;
 
     if (e.repeat) return;

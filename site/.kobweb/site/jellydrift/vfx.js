@@ -71,9 +71,11 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
   }
 
   const MAX_SKIDS = 280;
-  const MAX_SMOKE = 128;
+  const MAX_SMOKE = 176;
   const MAX_SPARKS = 96;
   const HIDDEN_Y = -9999;
+  const SMOKE_INTERVAL = 1 / 55;
+  const SKID_INTERVAL = 0.024;
 
   let disposed = false;
   const disposables = [];
@@ -90,14 +92,17 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
   const _fwd = new THREE.Vector3(0, 0, 1);
 
   // 1. Pooled Skid Marks (InstancedMesh ring buffer)
-  const skidGeo = new THREE.PlaneGeometry(0.42, 1.35);
+  // One quad per wheel per tick, stretched between the last and current contact
+  // patch so the two ribbons read as continuous parallel lines instead of beads.
+  const SKID_LEN = 1.5;
+  const skidGeo = new THREE.PlaneGeometry(0.30, SKID_LEN);
   skidGeo.rotateX(-Math.PI / 2);
   disposables.push(skidGeo);
 
   const skidMat = new THREE.MeshBasicMaterial({
-    color: 0x14171f,
+    color: 0x10131a,
     transparent: true,
-    opacity: 0.48,
+    opacity: 0.62,
     depthWrite: false,
     polygonOffset: true,
     polygonOffsetFactor: -2,
@@ -118,6 +123,11 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
 
   let skidCursor = 0;
   let skidTimer = 0;
+  // Per-side last ribbon contact point (null = pen lift, start a fresh ribbon)
+  const skidLast = [null, null];
+  let smokeTimer = 0;
+  let sparkTimer = 0;
+  let wasBoosting = false;
 
   // 2. Pooled Tire Smoke (Points ring buffer)
   const smokePositions = new Float32Array(MAX_SMOKE * 3);
@@ -141,11 +151,11 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
   if (smokeTex) disposables.push(smokeTex);
 
   const smokeMat = new THREE.PointsMaterial({
-    size: 0.92,
+    size: 1.08,
     map: smokeTex,
     vertexColors: true,
     transparent: true,
-    opacity: 0.68,
+    opacity: 0.52,
     depthWrite: false,
     sizeAttenuation: true
   });
@@ -193,49 +203,9 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
 
   let sparkCursor = 0;
 
-  // 4. Pooled Boost Exhaust Flames
-  const flameGroup = new THREE.Group();
-  flameGroup.name = "vfx-boost-flames";
-  flameGroup.visible = false;
-
-  const outerFlameGeo = new THREE.ConeGeometry(0.18, 0.95, 10);
-  outerFlameGeo.rotateX(-Math.PI / 2);
-  outerFlameGeo.translate(0, 0, -0.48);
-  disposables.push(outerFlameGeo);
-
-  const innerFlameGeo = new THREE.ConeGeometry(0.09, 0.56, 8);
-  innerFlameGeo.rotateX(-Math.PI / 2);
-  innerFlameGeo.translate(0, 0, -0.28);
-  disposables.push(innerFlameGeo);
-
-  const outerFlameMat = new THREE.MeshBasicMaterial({
-    color: 0xff9a1f,
-    transparent: true,
-    opacity: 0.85,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  });
-  const innerFlameMat = new THREE.MeshBasicMaterial({
-    color: 0xfff5d6,
-    transparent: true,
-    opacity: 0.95,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  });
-  disposables.push(outerFlameMat, innerFlameMat);
-
-  const flamePairs = [];
-  for (const xOff of [-0.46, 0.46]) {
-    const pipe = new THREE.Group();
-    pipe.position.set(xOff, 0.34, -2.12);
-    const outer = new THREE.Mesh(outerFlameGeo, outerFlameMat);
-    const inner = new THREE.Mesh(innerFlameGeo, innerFlameMat);
-    pipe.add(outer);
-    pipe.add(inner);
-    flameGroup.add(pipe);
-    flamePairs.push(pipe);
-  }
-  if (scene && typeof scene.add === "function") scene.add(flameGroup);
+  // Boost flames removed (OC-4): cars never boost, handbrake drift is the focus.
+  // Kept a null flameGroup reference for API compatibility.
+  const flameGroup = null;
 
   // Optional self-cleaning 2D speed-lines canvas overlay
   let overlayCanvas = null;
@@ -299,7 +269,7 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
     smokeBaseY[i] = y - 0.08;
   }
 
-  function emitSkidSegment(pos, normal = null, forwardDir = null, intensity = 1) {
+  function emitSkidSegment(pos, normal = null, forwardDir = null, intensity = 1, stretch = 1) {
     if (disposed) return;
     const px = finiteOr(pos?.x, NaN);
     const py = finiteOr(pos?.y, NaN);
@@ -330,12 +300,37 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
       pz + _normal.z * 0.035
     );
     const widthScale = clamp(intensity, 0.4, 1.35, 1.0);
-    _scale.set(widthScale, 1, 1);
+    const lenScale = clamp(stretch, 0.5, 3.0, 1.0);
+    _scale.set(widthScale, 1, lenScale);
 
     _mat4.compose(_pos, _quat, _scale);
     skidMesh.setMatrixAt(skidCursor, _mat4);
     skidCursor = (skidCursor + 1) % MAX_SKIDS;
     skidMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // Stitch a ribbon segment between the last and current wheel contact patch.
+  // Returns the new contact point so the caller can keep per-side continuity.
+  function layRibbon(sideIdx, x, y, z, normal, fallbackYaw, intensity) {
+    const prev = skidLast[sideIdx];
+    skidLast[sideIdx] = { x, y, z };
+    if (!prev) return;
+
+    const dx = x - prev.x;
+    const dz = z - prev.z;
+    const dist = Math.hypot(dx, dz);
+    if (!Number.isFinite(dist) || dist < 0.02) return;
+    // Jumped (respawn / teleport): start a new ribbon instead of smearing a line
+    if (dist > 4.5) return;
+
+    const yaw = Math.abs(dx) + Math.abs(dz) > 1e-4 ? Math.atan2(dx, dz) : fallbackYaw;
+    emitSkidSegment(
+      { x: (prev.x + x) * 0.5, y: y, z: (prev.z + z) * 0.5 },
+      normal,
+      yaw,
+      intensity,
+      (dist / SKID_LEN) * 1.04
+    );
   }
 
   function emitCollisionSparks(x, y, z, intensity = 1, normal = null) {
@@ -366,6 +361,34 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
       sparkLife[i] = l;
       sparkMaxLife[i] = l;
       sparkBaseY[i] = y + 0.06;
+    }
+  }
+
+  // Ground-hugging kerb sparks thrown off a rear tire mid-drift.
+  function emitKerbSparks(x, y, z, sideSign = 1, intensity = 1) {
+    if (disposed) return;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+    const count = Math.round(clamp(intensity * 7, 3, 10, 5));
+    for (let c = 0; c < count; c++) {
+      const i = sparkCursor;
+      sparkCursor = (sparkCursor + 1) % MAX_SPARKS;
+      const idx3 = i * 3;
+      sparkPositions[idx3] = x + (Math.random() - 0.5) * 0.16;
+      sparkPositions[idx3 + 1] = y + 0.05 + Math.random() * 0.08;
+      sparkPositions[idx3 + 2] = z + (Math.random() - 0.5) * 0.16;
+
+      sparkVel[idx3] = sideSign * (1.4 + Math.random() * 2.6) + (Math.random() - 0.5) * 2.0;
+      sparkVel[idx3 + 1] = 1.1 + Math.random() * 2.4;
+      sparkVel[idx3 + 2] = -1.2 + Math.random() * 2.4;
+
+      sparkColors[idx3] = 1.0;
+      sparkColors[idx3 + 1] = 0.66 + Math.random() * 0.3;
+      sparkColors[idx3 + 2] = 0.16;
+
+      const l = 0.16 + Math.random() * 0.22;
+      sparkLife[i] = l;
+      sparkMaxLife[i] = l;
+      sparkBaseY[i] = y + 0.02;
     }
   }
 
@@ -456,15 +479,60 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
       const rrZ = rearCenterZ - leftZ * trackHalf;
 
       // Skid marks & tire smoke during drift
+      const slipMag = Math.abs(finiteOr(player?.slip, 0));
       if (driftActive) {
+        const driftIntensity = clamp(0.75 + slipMag * 0.9, 0.7, 1.3, 1.0);
+
+        // Continuous twin skid ribbons: stitch each side between successive
+        // contact patches so the marks read as solid lines, not dashes.
         skidTimer += dtSafe;
-        if (skidTimer >= 0.032) {
+        if (skidTimer >= SKID_INTERVAL) {
           skidTimer = 0;
-          emitSkidSegment({ x: rlX, y: py, z: rlZ }, surfNorm, yaw, 1.0);
-          emitSkidSegment({ x: rrX, y: py, z: rrZ }, surfNorm, yaw, 1.0);
+          layRibbon(0, rlX, py, rlZ, surfNorm, yaw, driftIntensity);
+          layRibbon(1, rrX, py, rrZ, surfNorm, yaw, driftIntensity);
         }
-        emit(rlX, py + 0.16, rlZ, 0.88, 0.90, 0.94, 0.55);
-        emit(rrX, py + 0.16, rrZ, 0.88, 0.90, 0.94, 0.55);
+
+        // Handbrake drift smoke: two puffs per rear tire with jitter for volume
+        // (emphasized for Spacebar handbrake lockup feel)
+        smokeTimer += dtSafe;
+        if (smokeTimer >= SMOKE_INTERVAL) {
+          smokeTimer = 0;
+          for (const side of [1, -1]) {
+            const wx = rearCenterX + leftX * trackHalf * side;
+            const wz = rearCenterZ + leftZ * trackHalf * side;
+            for (let p = 0; p < 2; p++) {
+              emit(
+                wx + (Math.random() - 0.5) * 0.34,
+                py + 0.12 + Math.random() * 0.16,
+                wz + (Math.random() - 0.5) * 0.34,
+                0.86,
+                0.88,
+                0.93,
+                0.55 + Math.random() * 0.2
+              );
+            }
+          }
+        }
+
+        // Kerb sparks: the outside tire grinds the shoulder above ~60 km/h
+        if (speedKmhVal > 60) {
+          sparkTimer += dtSafe;
+          const sparkRate = 1 / clamp(speedKmhVal / 42, 0.6, 2.4, 1.0);
+          if (sparkTimer >= sparkRate) {
+            sparkTimer = 0;
+            const side = Math.random() < 0.5 ? 1 : -1;
+            const wx = rearCenterX + leftX * trackHalf * side;
+            const wz = rearCenterZ + leftZ * trackHalf * side;
+            emitKerbSparks(wx, py + 0.02, wz, side, clamp(speedKmhVal / 90, 0.5, 1.4, 1.0));
+          }
+        }
+      } else {
+        // Lift the pen so the next drift starts a clean pair of ribbons
+        skidLast[0] = null;
+        skidLast[1] = null;
+        skidTimer = 0;
+        smokeTimer = 0;
+        sparkTimer = 0;
       }
 
       // Collision spark burst on rising collisionPulse
@@ -474,33 +542,8 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
       }
       lastCollisionPulse = colPulse;
 
-      // Boost exhaust flames + embers
-      if (boostActive) {
-        flameGroup.visible = true;
-        flameGroup.position.set(px, py + finiteOr(player?.spring?.bounceY, 0), pz);
-        flameGroup.rotation.set(
-          (finiteOr(player?.surfacePitchDeg, 0) * Math.PI) / 180,
-          yaw,
-          0
-        );
-
-        const outerHex =
-          boostTier >= 3 ? 0xd946ef : boostTier === 2 ? 0x00e5ff : 0xff9a1f;
-        const innerHex = boostTier >= 2 ? 0xffffff : 0xfff5c0;
-        outerFlameMat.color.setHex(outerHex);
-        innerFlameMat.color.setHex(innerHex);
-
-        const flicker = 0.85 + 0.35 * Math.sin(elapsed * 55) + Math.random() * 0.2;
-        const tierLen = 0.85 + boostTier * 0.35;
-        for (let f = 0; f < flamePairs.length; f++) {
-          flamePairs[f].scale.set(0.85 + boostTier * 0.12, 0.85 + boostTier * 0.12, tierLen * flicker);
-        }
-        emit(rearCenterX, py + 0.34, rearCenterZ, 1.0, boostTier >= 2 ? 0.85 : 0.55, 0.25, 0.28);
-      } else {
-        flameGroup.visible = false;
-      }
-    } else if (!boostActive) {
-      flameGroup.visible = false;
+      // Boost flames removed (OC-4): cars never boost.
+      // Handbrake drift smoke above is the primary feedback cue.
     }
 
     // Advance smoke particle ring buffer
@@ -529,7 +572,7 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
         smokeColors[idx3 + 2] = smokeBaseCol[idx3 + 2] * fade;
       }
     }
-    if (smokeDirty || driftActive || boostActive) {
+    if (smokeDirty || driftActive) {
       smokeGeo.attributes.position.needsUpdate = true;
       smokeGeo.attributes.color.needsUpdate = true;
     }
@@ -577,10 +620,14 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
     if (disposed) return;
     skidCursor = 0;
     skidTimer = 0;
+    skidLast[0] = null;
+    skidLast[1] = null;
+    smokeTimer = 0;
+    sparkTimer = 0;
+    wasBoosting = false;
     smokeCursor = 0;
     sparkCursor = 0;
     lastCollisionPulse = 0;
-    flameGroup.visible = false;
     speedLinesState = computeSpeedLinesState();
 
     for (let i = 0; i < MAX_SKIDS; i++) {
@@ -615,7 +662,6 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
       scene.remove(skidMesh);
       scene.remove(smokePoints);
       scene.remove(sparkPoints);
-      scene.remove(flameGroup);
     }
     for (let i = 0; i < disposables.length; i++) {
       const d = disposables[i];
