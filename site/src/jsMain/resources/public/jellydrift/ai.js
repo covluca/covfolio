@@ -17,7 +17,7 @@ export const AI_PROFILES = [
     carId: "tofu_86",
     colorHex: "#F4F5F7",
     basePace: 0.99,
-    baseLane: -1.9,
+    baseLane: -2.2,
     skill: 0.92,
     aggression: 0.65
   },
@@ -27,7 +27,7 @@ export const AI_PROFILES = [
     carId: "bumble_buggy",
     colorHex: "#F3DB5B",
     basePace: 0.96,
-    baseLane: 1.9,
+    baseLane: 2.2,
     skill: 0.85,
     aggression: 0.82
   },
@@ -37,7 +37,7 @@ export const AI_PROFILES = [
     carId: "cobalt_hyper",
     colorHex: "#3C83EF",
     basePace: 1.03,
-    baseLane: -1.75,
+    baseLane: -2.0,
     skill: 0.96,
     aggression: 0.72
   },
@@ -47,7 +47,7 @@ export const AI_PROFILES = [
     carId: "jelly_gt",
     colorHex: "#E63946",
     basePace: 0.97,
-    baseLane: 1.75,
+    baseLane: 2.0,
     skill: 0.88,
     aggression: 0.76
   }
@@ -69,7 +69,7 @@ function safeSpawnLane(track, rawLane) {
 export function createAIState(track, index = 0) {
   const profile = AI_PROFILES[index % AI_PROFILES.length];
   const carDef = getCar(profile.carId);
-  const spawnS = 7 + index * 5.5;
+  const spawnS = 8 + index * 8.0;
   const lane = safeSpawnLane(track, profile.baseLane);
 
   const ai = createCarPhysicsState(carDef, track, { s: spawnS, lane });
@@ -95,7 +95,7 @@ export function resetAIState(ai, track, index = null) {
   const idx = index !== null ? index : ai.index || 0;
   const profile = AI_PROFILES[idx % AI_PROFILES.length];
   const carDef = getCar(profile.carId);
-  const spawnS = 7 + idx * 5.5;
+  const spawnS = 8 + idx * 8.0;
   const lane = safeSpawnLane(track, profile.baseLane);
 
   resetCarPhysicsState(ai, track, carDef, { s: spawnS, lane });
@@ -334,7 +334,7 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
   const progressGap = player ? clamp((playerProg - aiProg) / 140, -1, 1, 0) : 0;
   const paceFactor = clamp((ai.basePace || 1.0) + progressGap * 0.08, 0.92, 1.08, 1.0);
 
-  const cornerSpeedScale = clamp(1 - cornerAngle * 0.48, 0.42, 1.0, 1.0);
+  const cornerSpeedScale = clamp(1 - cornerAngle * 0.52, 0.45, 1.0, 1.0);
   const targetSpeed = (ai.def?.maxSpeed || 32.9) * paceFactor * cornerSpeedScale;
 
   let input;
@@ -355,7 +355,7 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
     const curSpeed = ai.speed || 0;
     const throttle = curSpeed < targetSpeed;
     const brake = curSpeed > targetSpeed + 4.5 && cornerAngle > 0.30;
-    const wantDrift = cornerAngle > 0.24 && curSpeed > 11.5 && Math.abs(headingErr) > 0.12;
+    const wantDrift = cornerAngle > 0.30 && curSpeed > 14.0 && Math.abs(headingErr) > 0.14;
     const wantBoost = false;
 
     input = {

@@ -90,8 +90,8 @@ export function createAdProjector(THREE, options) {
 
   function projectCorners(anchor, camera, width, height, rect) {
     const corners = anchor && anchor.userData && anchor.userData.corners;
-    if (!corners) return null;
-    anchor.updateWorldMatrix(true, false);
+    if (!corners || !camera) return null;
+    anchor.updateWorldMatrix(true, true);
     const ordered = [corners.tl, corners.tr, corners.bl, corners.br];
     if (ordered.some((corner) => !corner || typeof corner.getWorldPosition !== "function")) {
       return null;
@@ -100,11 +100,28 @@ export function createAdProjector(THREE, options) {
     for (let i = 0; i < ordered.length; i += 1) {
       ordered[i].getWorldPosition(anchorWorld);
       projected.copy(anchorWorld).project(camera);
-      if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y)) return null;
+      if (
+        !Number.isFinite(projected.x) ||
+        !Number.isFinite(projected.y) ||
+        !Number.isFinite(projected.z) ||
+        projected.z < -1 ||
+        projected.z > 1
+      ) {
+        return null;
+      }
       points.push({
         x: (projected.x * 0.5 + 0.5) * width,
         y: (-projected.y * 0.5 + 0.5) * height,
       });
+    }
+    const area1 =
+      (points[1].x - points[0].x) * (points[2].y - points[0].y) -
+      (points[1].y - points[0].y) * (points[2].x - points[0].x);
+    const area2 =
+      (points[2].x - points[3].x) * (points[1].y - points[3].y) -
+      (points[2].y - points[3].y) * (points[1].x - points[3].x);
+    if (area1 < 25 || area2 < 25) {
+      return null;
     }
     const coefficients = solveHomography(rect.width, rect.height, points);
     return coefficients ? { points, coefficients } : null;
@@ -124,37 +141,34 @@ export function createAdProjector(THREE, options) {
     const mapped = projectCorners(anchor, camera, width, height, rect);
     if (mapped) {
       const h = mapped.coefficients;
+      // CSS matrix3d() is column-major: column 0 = (h0, h3, 0, h6), column 1 = (h1, h4, 0, h7), column 3 = (h2, h5, 0, 1)
       applyRect(
         el,
         rect,
         "matrix3d(" +
-          [h[0], h[1], 0, h[6], h[3], h[4], 0, h[7], 0, 0, 1, 0, h[2], h[5], 0, 1]
+          [h[0], h[3], 0, h[6], h[1], h[4], 0, h[7], 0, 0, 1, 0, h[2], h[5], 0, 1]
             .map((value) => value.toFixed(6))
             .join(",") +
           ")"
       );
-      return;
-    }
-    const euler = new THREE.Euler();
-    if (anchor) {
-      anchor.getWorldQuaternion(tmpQuaternion);
-      euler.setFromQuaternion(tmpQuaternion);
+      const pts = mapped.points;
+      const minX = Math.min(pts[0].x, pts[1].x, pts[2].x, pts[3].x);
+      const maxX = Math.max(pts[0].x, pts[1].x, pts[2].x, pts[3].x);
+      const minY = Math.min(pts[0].y, pts[1].y, pts[2].y, pts[3].y);
+      const maxY = Math.max(pts[0].y, pts[1].y, pts[2].y, pts[3].y);
+      return {
+        left: Math.round(minX * 100) / 100,
+        top: Math.round(minY * 100) / 100,
+        width: Math.max(1, Math.round((maxX - minX) * 100) / 100),
+        height: Math.max(1, Math.round((maxY - minY) * 100) / 100),
+      };
     }
     applyRect(
       el,
       rect,
-      "translate3d(" +
-        rect.left.toFixed(2) +
-        "px," +
-        rect.top.toFixed(2) +
-        "px,0) perspective(700px) rotateX(" +
-        ((euler.x * 180) / Math.PI).toFixed(2) +
-        "deg) rotateY(" +
-        ((euler.y * 180) / Math.PI).toFixed(2) +
-        "deg) rotateZ(" +
-        ((euler.z * 180) / Math.PI).toFixed(2) +
-        "deg)"
+      "translate3d(" + rect.left.toFixed(2) + "px," + rect.top.toFixed(2) + "px,0)"
     );
+    return rect;
   }
 
   function resolveAnchor(getterOrObj) {
@@ -233,8 +247,7 @@ export function createAdProjector(THREE, options) {
     if (showConsole) {
       const rect = consoleRect(s.camera, width, height, s);
       last.console.visible = true;
-      last.console.rect = rect;
-      applyProjectedRect(consoleHost, rect, resolveAnchor(opts.consoleAnchor), s.camera, width, height);
+      last.console.rect = applyProjectedRect(consoleHost, rect, resolveAnchor(opts.consoleAnchor), s.camera, width, height);
       applyShown(consoleHost, "console");
     } else {
       last.console.visible = false;
@@ -245,8 +258,7 @@ export function createAdProjector(THREE, options) {
     if (showRoof) {
       const rect = roofRect(s.camera, width, height, s);
       last.roof.visible = true;
-      last.roof.rect = rect;
-      applyProjectedRect(roofHost, rect, resolveAnchor(opts.roofAnchor), s.camera, width, height);
+      last.roof.rect = applyProjectedRect(roofHost, rect, resolveAnchor(opts.roofAnchor), s.camera, width, height);
       applyShown(roofHost, "roof");
     } else {
       last.roof.visible = false;

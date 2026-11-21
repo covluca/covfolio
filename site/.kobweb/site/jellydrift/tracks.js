@@ -250,7 +250,7 @@ const TRACK_SPECS = [
     subtitle: "Cliffside Switchback Touge",
     halfWidth: 8.6,
     gateCount: 12,
-    maxBankRad: (5.5 * Math.PI) / 180,
+    maxBankRad: (4.5 * Math.PI) / 180,
     skyHex: "#79CBE8",
     fogColor: 0x8ad4ec,
     fogNear: 240,
@@ -293,7 +293,7 @@ const TRACK_SPECS = [
     subtitle: "Red-Rock Mountain Pass",
     halfWidth: 8.2,
     gateCount: 14,
-    maxBankRad: (7.5 * Math.PI) / 180,
+    maxBankRad: (5.5 * Math.PI) / 180,
     skyHex: "#E8925C",
     fogColor: 0xe8925c,
     fogNear: 220,
@@ -337,7 +337,7 @@ const TRACK_SPECS = [
     subtitle: "Midnight Expressway Touge",
     halfWidth: 8.4,
     gateCount: 14,
-    maxBankRad: (6.5 * Math.PI) / 180,
+    maxBankRad: (5.0 * Math.PI) / 180,
     skyHex: "#06080B",
     fogColor: 0x080b14,
     fogNear: 220,
@@ -426,7 +426,8 @@ function buildBakedTrack(spec) {
     const upBase = new THREE.Vector3().crossVectors(tangent, leftFlat).normalize();
 
     const curv = smoothCurvatures[i];
-    const bank = clamp(curv * 4.5, -spec.maxBankRad, spec.maxBankRad, 0);
+    // Negative curvature sign gives proper inward racing banking (outer edge higher)
+    const bank = clamp(-curv * 3.2, -spec.maxBankRad, spec.maxBankRad, 0);
     qBank.setFromAxisAngle(tangent, bank);
 
     const binormal = leftFlat.clone().applyQuaternion(qBank).normalize();
@@ -597,11 +598,11 @@ function buildBakedTrack(spec) {
     }
     const sObj = samples[idx];
     const side = i % 2 === 0 ? 1 : -1;
-    const offsetDist = sObj.halfWidth + 4.8;
+    const offsetDist = sObj.halfWidth + 7.0;
     // binormal points left (+1); right is -binormal
     const bx = sObj.x + sObj.bx * side * offsetDist;
     const bz = sObj.z + sObj.bz * side * offsetDist;
-    const by = sObj.y + 4.0;
+    const by = sObj.y + 4.2;
     const preset = SPONSOR_PRESETS[i % SPONSOR_PRESETS.length];
     billboards.push({
       index: i,
@@ -614,8 +615,8 @@ function buildBakedTrack(spec) {
       roadY: sObj.y,
       roadZ: sObj.z,
       angle: sObj.angle + (side > 0 ? -0.35 : 0.35) + Math.PI,
-      width: 10.6,
-      height: 4.5,
+      width: 8.6,
+      height: 3.8,
       text: `${preset.title} — ${preset.subtitle}`,
       preset
     });
@@ -857,9 +858,9 @@ function buildRibbonGeometry(samples, leftFn, rightFn, uvScaleV = 0.125, flipWin
       const c = a + 2;
       const d = a + 3;
       if (!flipWinding) {
-        indices.push(a, c, b, b, c, d);
-      } else {
         indices.push(a, b, c, b, d, c);
+      } else {
+        indices.push(a, c, b, b, c, d);
       }
     }
   }
@@ -933,14 +934,14 @@ export function buildTrackMeshes(track) {
     buildRibbonGeometry(
       samples,
       (s) => ({
-        x: s.x + s.bx * s.halfWidth,
-        y: s.y + s.ny * 0.02,
-        z: s.z + s.bz * s.halfWidth
+        x: s.x + s.bx * s.halfWidth + s.nx * 0.02,
+        y: s.y + s.by * s.halfWidth + s.ny * 0.02,
+        z: s.z + s.bz * s.halfWidth + s.nz * 0.02
       }),
       (s) => ({
-        x: s.x - s.bx * s.halfWidth,
-        y: s.y + s.ny * 0.02,
-        z: s.z - s.bz * s.halfWidth
+        x: s.x - s.bx * s.halfWidth + s.nx * 0.02,
+        y: s.y - s.by * s.halfWidth + s.ny * 0.02,
+        z: s.z - s.bz * s.halfWidth + s.nz * 0.02
       }),
       1 / SAMPLE_COUNT
     )
@@ -1122,12 +1123,14 @@ export function buildTrackMeshes(track) {
     group.add(new THREE.Mesh(skirtGeo, undersideMat));
   }
 
-  // Support pillars under elevated bridge stretches (avoiding lower deck roadway)
+  // Support pillars under elevated bridge stretches (flush beneath deck underside, never poking through asphalt)
   const pillarGeo = trackGeom(new THREE.BoxGeometry(1.3, 1, 1.3));
+  const capBeamGeo = trackGeom(new THREE.BoxGeometry(1, 0.45, 1.35));
   const pillarAdjSkip = Math.round(SAMPLE_COUNT * 0.085);
   for (let i = 0; i < SAMPLE_COUNT; i += 18) {
     const s = samples[i];
     if (s.y < 2.6) continue;
+    let placedBothSides = true;
     for (const side of [-1, 1]) {
       const px = s.x + s.bx * side * (s.halfWidth * 0.78);
       const pz = s.z + s.bz * side * (s.halfWidth * 0.78);
@@ -1142,13 +1145,25 @@ export function buildTrackMeshes(track) {
           break;
         }
       }
-      if (overlapsLowerRoad) continue;
-      const h = Math.max(1.0, s.y - track.groundY + 0.5);
+      if (overlapsLowerRoad) {
+        placedBothSides = false;
+        continue;
+      }
+      const pillarTopY = s.y + s.by * side * (s.halfWidth * 0.78) - s.ny * 0.74;
+      const h = Math.max(0.5, pillarTopY - track.groundY + 0.5);
       const pillar = new THREE.Mesh(pillarGeo, undersideMat);
       pillar.scale.set(1, h, 1);
-      pillar.position.set(px, track.groundY + h * 0.5 - 0.5, pz);
+      pillar.position.set(px, track.groundY - 0.5 + h * 0.5, pz);
       pillar.name = "bridge-pillar";
       group.add(pillar);
+    }
+    if (placedBothSides) {
+      const cap = new THREE.Mesh(capBeamGeo, undersideMat);
+      cap.scale.set(s.halfWidth * 1.65, 1, 1);
+      cap.position.set(s.x, s.y - 0.92, s.z);
+      cap.rotation.y = s.angle;
+      cap.name = "bridge-cap-beam";
+      group.add(cap);
     }
   }
 
@@ -1174,9 +1189,9 @@ export function buildTrackMeshes(track) {
   startLine.name = "start-finish-stripe";
   group.add(startLine);
 
-  // Subtle roadside checkpoint pylons
-  const cpPoleGeo = trackGeom(new THREE.CylinderGeometry(0.18, 0.24, 3.6, 8));
-  const cpBeaconGeo = trackGeom(new THREE.SphereGeometry(0.36, 10, 8));
+  // Subtle roadside checkpoint pylons seated outside the guardrail edge
+  const cpPoleGeo = trackGeom(new THREE.CylinderGeometry(0.11, 0.14, 2.8, 8));
+  const cpBeaconGeo = trackGeom(new THREE.SphereGeometry(0.24, 10, 8));
   const cpPoleMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.4, roughness: 0.4 }));
   const cpBeaconMat = trackMat(
     new THREE.MeshBasicMaterial({
@@ -1187,15 +1202,15 @@ export function buildTrackMeshes(track) {
     const g = track.gates[k];
     if (g.isStartFinish) continue;
     for (const side of [-1, 1]) {
-      const ox = g.x + g.bx * side * (g.halfWidth + 1.55);
-      const oy = g.y + g.by * side * (g.halfWidth + 1.55);
-      const oz = g.z + g.bz * side * (g.halfWidth + 1.55);
+      const ox = g.x + g.bx * side * (g.halfWidth + 1.52);
+      const oy = g.y + g.by * side * (g.halfWidth + 1.52);
+      const oz = g.z + g.bz * side * (g.halfWidth + 1.52);
       const pole = new THREE.Mesh(cpPoleGeo, cpPoleMat);
-      pole.position.set(ox, oy + 1.8, oz);
+      pole.position.set(ox, oy + 1.15, oz);
       group.add(pole);
 
       const beacon = new THREE.Mesh(cpBeaconGeo, cpBeaconMat);
-      beacon.position.set(ox, oy + 3.7, oz);
+      beacon.position.set(ox, oy + 2.62, oz);
       group.add(beacon);
     }
   }
@@ -1283,19 +1298,24 @@ export function buildTrackMeshes(track) {
 
   // 8. Trackside Highway Billboards -> billboardMeshes for M3 ads3d.js
   const billboardMeshes = [];
-  const bbPoleGeo = trackGeom(new THREE.CylinderGeometry(0.22, 0.28, 6.2, 8));
+  const bbPoleGeo = trackGeom(new THREE.CylinderGeometry(0.20, 0.26, 1, 8));
   const bbBackingMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x161b26, metalness: 0.55, roughness: 0.45 }));
 
   for (let i = 0; i < track.billboards.length; i++) {
     const bb = track.billboards[i];
     const frameGroup = new THREE.Group();
     frameGroup.name = `billboard-${i}`;
-    frameGroup.position.set(bb.x, bb.y - 4.0, bb.z);
+    const groupBaseY = bb.y - 4.0;
+    frameGroup.position.set(bb.x, groupBaseY, bb.z);
     frameGroup.rotation.y = bb.angle;
 
+    const poleBotLocal = Math.min(0, track.groundY - 0.6 - groupBaseY);
+    const poleTopLocal = 4.8;
+    const poleH = Math.max(3.5, poleTopLocal - poleBotLocal);
     for (const px of [-bb.width * 0.34, bb.width * 0.34]) {
       const pole = new THREE.Mesh(bbPoleGeo, bbBackingMat);
-      pole.position.set(px, 3.1, -0.25);
+      pole.scale.set(1, poleH, 1);
+      pole.position.set(px, poleBotLocal + poleH * 0.5, -0.25);
       frameGroup.add(pole);
     }
 
@@ -1356,7 +1376,7 @@ export function buildTrackMeshes(track) {
     return true;
   }
 
-  // Touge outer-corner reflective hairpin chevron boards (placed where curvature peaks)
+  // Touge outer-corner reflective hairpin chevron boards (mounted flush on outer guardrail edge)
   const chevronColors =
     track.id === "sunny_coast"
       ? ["#111827", "#f3db5b"]
@@ -1364,28 +1384,29 @@ export function buildTrackMeshes(track) {
       ? ["#f8fafc", "#e63946"]
       : ["#0f172a", "#00e5ff"];
   const chevronTex = trackTex(createChevronTexture(chevronColors[0], chevronColors[1]));
-  const chevronGeo = trackGeom(new THREE.PlaneGeometry(2.1, 2.1));
+  const chevronGeo = trackGeom(new THREE.PlaneGeometry(1.75, 1.75));
   const chevronMat = trackMat(
     new THREE.MeshBasicMaterial({ color: 0xffffff, map: chevronTex, side: THREE.DoubleSide })
   );
-  const chevronPostGeo = trackGeom(new THREE.CylinderGeometry(0.08, 0.1, 2.4, 6));
+  const chevronPostGeo = trackGeom(new THREE.CylinderGeometry(0.08, 0.1, 2.2, 6));
   const chevronPostMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 }));
   for (let i = 16; i < SAMPLE_COUNT - 16; i += 9) {
     const s = samples[i];
     if (Math.abs(s.curvature) < 0.025) continue;
     const outSide = s.curvature > 0 ? -1 : 1;
-    const dist = s.halfWidth + 2.05;
+    const dist = s.halfWidth + 1.42;
     const cx = s.x + s.bx * outSide * dist;
+    const cy = s.y + s.by * outSide * dist;
     const cz = s.z + s.bz * outSide * dist;
     const post = new THREE.Mesh(chevronPostGeo, chevronPostMat);
-    post.position.set(cx, s.y + 1.2, cz);
+    post.position.set(cx, cy + 0.85, cz);
     group.add(post);
 
     const sign = new THREE.Mesh(chevronGeo, chevronMat);
-    sign.position.set(cx, s.y + 2.45, cz);
-    // Face oncoming traffic along -tangent; mirror horizontally when turning left vs right
-    sign.rotation.y = s.angle + (outSide > 0 ? 0.28 : -0.28) + Math.PI;
-    if (s.curvature < 0) sign.scale.x = -1;
+    sign.position.set(cx, cy + 1.95, cz);
+    // Face oncoming traffic along -tangent; flip arrow so left turns point LEFT (<) and right turns point RIGHT (>)
+    sign.rotation.y = s.angle + (outSide > 0 ? 0.22 : -0.22) + Math.PI;
+    if (s.curvature > 0) sign.scale.x = -1;
     group.add(sign);
   }
 
@@ -1523,17 +1544,20 @@ export function buildTrackMeshes(track) {
     const cactusMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x3b8c52, roughness: 0.8 }));
     const timberMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x7c4d2b, roughness: 0.88 }));
 
-    // A) Sculpted Red-Rock Natural Sandstone Arch spanning completely over the canyon road
+    // A) Sculpted Red-Rock Natural Sandstone Arch spanning completely over the canyon road (grounded to canyon floor)
     const archIdx = Math.floor(SAMPLE_COUNT * 0.74);
     const as = samples[archIdx];
     const archGroup = new THREE.Group();
     archGroup.position.set(as.x, as.y, as.z);
     archGroup.rotation.y = as.angle;
     const span = as.halfWidth + 3.4;
-    const pierGeo = trackGeom(new THREE.BoxGeometry(5.2, 11.5, 6.2));
+    const archBaseLocalY = track.groundY - 1.5 - as.y;
+    const pierH = Math.max(11.5, 10.2 - archBaseLocalY);
+    const pierGeo = trackGeom(new THREE.BoxGeometry(5.2, 1, 6.2));
     for (const side of [-1, 1]) {
       const pier = new THREE.Mesh(pierGeo, mesaDarkMat);
-      pier.position.set(side * (span + 1.8), 4.8, 0);
+      pier.scale.set(1, pierH, 1);
+      pier.position.set(side * (span + 2.0), archBaseLocalY + pierH * 0.5, 0);
       pier.rotation.z = -side * 0.12;
       archGroup.add(pier);
     }
@@ -1545,18 +1569,28 @@ export function buildTrackMeshes(track) {
     archGroup.add(lintel2);
     group.add(archGroup);
 
-    // B) Stepped Multi-Tier Red-Rock Canyon Mesas
+    // B) Stepped Multi-Tier Red-Rock Canyon Mesas & Gorge Cliff Ridges
     const tierGeo = trackGeom(new THREE.CylinderGeometry(11, 15, 9, 7));
     const mesaCoords = [
       [225, 45, 1.4],
       [-52, 20, 1.3],
       [215, -170, 1.5],
       [98, -104, 0.85],
-      [-54, -185, 1.6]
+      [-54, -185, 1.6],
+      [-76, 86, 1.8],
+      [-92, -62, 1.65],
+      [88, 148, 1.9],
+      [240, 130, 2.1],
+      [252, -55, 1.85],
+      [246, -245, 2.0],
+      [115, -285, 1.95],
+      [-35, -270, 1.75],
+      [-72, -125, 1.4],
+      [104, -52, 0.9]
     ];
     for (let m = 0; m < mesaCoords.length; m++) {
       const [mx, mz, sc] = mesaCoords[m];
-      if (!isClearOfTrack(mx, mz, 16 * sc)) continue;
+      if (!isClearOfTrack(mx, mz, 15 * sc)) continue;
       const mesa = new THREE.Group();
       mesa.position.set(mx, track.groundY, mz);
       const t1 = new THREE.Mesh(tierGeo, mesaDarkMat);
@@ -1574,18 +1608,22 @@ export function buildTrackMeshes(track) {
       group.add(mesa);
     }
 
-    // C) Wooden Canyon Lookout Watchtower near high pass overlook
+    // C) Wooden Canyon Lookout Watchtower near high pass overlook (legs grounded to canyon floor)
     const towerSample = samples[Math.floor(SAMPLE_COUNT * 0.45)];
     const wtX = towerSample.x - towerSample.bx * (towerSample.halfWidth + 9.5);
     const wtZ = towerSample.z - towerSample.bz * (towerSample.halfWidth + 9.5);
     if (isClearOfTrack(wtX, wtZ, 4.5)) {
       const wt = new THREE.Group();
-      wt.position.set(wtX, towerSample.y - 1.0, wtZ);
-      const legGeo = trackGeom(new THREE.BoxGeometry(0.45, 9.5, 0.45));
+      const wtBaseY = towerSample.y - 1.0;
+      wt.position.set(wtX, wtBaseY, wtZ);
+      const wtBaseLocalY = track.groundY - 1.2 - wtBaseY;
+      const legH = Math.max(9.5, 10.0 - wtBaseLocalY);
+      const legGeo = trackGeom(new THREE.BoxGeometry(0.45, 1, 0.45));
       for (const lx of [-1.8, 1.8]) {
         for (const lz of [-1.8, 1.8]) {
           const leg = new THREE.Mesh(legGeo, timberMat);
-          leg.position.set(lx, 4.7, lz);
+          leg.scale.set(1, legH, 1);
+          leg.position.set(lx, wtBaseLocalY + legH * 0.5, lz);
           wt.add(leg);
         }
       }

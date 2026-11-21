@@ -129,8 +129,13 @@ fun JellyDriftHud(
                     .border(1.px, LineStyle.Solid, rgba(255, 255, 255, 0.16f))
                     .toAttrs()
             ) {
+                val lapLabel = if (snapshot.mode == GameMode.DRIFT_RUSH) {
+                    "LAP ${snapshot.lap}"
+                } else {
+                    "LAP ${snapshot.lap.coerceAtMost(snapshot.totalLaps)}/${snapshot.totalLaps}"
+                }
                 SpanText(
-                    "LAP ${snapshot.lap}/${snapshot.totalLaps}",
+                    lapLabel,
                     modifier = Modifier
                         .fontFamily(Res.Fonts.Space_Grotesk)
                         .fontSize(0.88.cssRem)
@@ -235,8 +240,7 @@ fun JellyDriftHud(
         )
     }
 
-    // Drift / boost status, bottom-right above the touch pad.
-    val tier = snapshot.boostTier.coerceIn(0, 3)
+    // Drift status & score, bottom-right above the touch pad (no boost meter).
     Div(
         Modifier
             .position(Position.Absolute)
@@ -248,14 +252,16 @@ fun JellyDriftHud(
             }
             .toAttrs()
     ) {
-        SpanText(
-            "${"●".repeat(tier)}${"○".repeat(3 - tier)} BOOST",
-            modifier = Modifier
-                .fontFamily(Res.Fonts.Space_Grotesk)
-                .fontSize(0.75.cssRem)
-                .fontWeight(FontWeight.Bold)
-                .color(if (tier > 0) ACCENT else Colors.LightGray)
-        )
+        if (snapshot.isDrifting) {
+            SpanText(
+                "DRIFT",
+                modifier = Modifier
+                    .fontFamily(Res.Fonts.Space_Grotesk)
+                    .fontSize(0.75.cssRem)
+                    .fontWeight(FontWeight.Bold)
+                    .color(ACCENT)
+            )
+        }
         Div(Modifier.toAttrs()) {
             SpanText(
                 "SCORE ${snapshot.driftScore}",
@@ -375,8 +381,7 @@ private fun TouchControls(snapshot: JellyDriftSnapshot) {
     // Pedals, bottom-right
     padButton("touch-brake", "BRK", Modifier.position(Position.Absolute).right(14.px).bottom(84.px)) { pad.brake = it }
     padButton("touch-throttle", "GAS", Modifier.position(Position.Absolute).right(14.px).bottom(18.px)) { pad.throttle = it }
-    padButton("touch-drift", "DRFT", Modifier.position(Position.Absolute).right(80.px).bottom(18.px)) { pad.drift = it }
-    padButton("touch-boost", "HBK", Modifier.position(Position.Absolute).right(80.px).bottom(84.px)) { pad.drift = it }
+    padButton("touch-drift", "HBK", Modifier.position(Position.Absolute).right(80.px).bottom(18.px)) { pad.drift = it }
 }
 
 internal object TouchBridgeHolder {

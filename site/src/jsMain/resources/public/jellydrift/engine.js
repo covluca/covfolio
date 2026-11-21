@@ -31,7 +31,7 @@ import { createAdProjector } from "./ads3d.js";
 const PUBLISHER_ID = "ca-pub-2255472474228401";
 const DRIFT_RUSH_START = 32.0;
 const CONTINUE_TIME = 20.0;
-const CHECKPOINT_BONUS = 5.5;
+const CHECKPOINT_BONUS = 2.4;
 const COUNTDOWN_START = 1.5;
 
 function disposeObject(obj) {
@@ -679,7 +679,7 @@ export function createJellyDriftEngine(config) {
     world.playerRoot.rotation.set(surfPitchRad, player.yaw, surfRollRad, "YXZ");
 
     const spring = player.spring || { pitchDeg: 0, rollDeg: 0, squash: 0, bounceY: 0 };
-    world.chassis.position.y = clamp(spring.bounceY, -0.26, 0.30);
+    world.chassis.position.y = clamp(spring.bounceY, -0.12, 0.14);
     world.chassis.rotation.x = ((spring.pitchDeg || 0) * Math.PI) / 180;
     world.chassis.rotation.z = (-(spring.rollDeg || 0) * Math.PI) / 180;
     const sq = clamp(spring.squash || 0, -0.15, 0.20);
@@ -716,7 +716,7 @@ export function createJellyDriftEngine(config) {
       aiMesh.carRoot.rotation.set(surfPitchRad, ai.yaw, surfRollRad, "YXZ");
 
       const spring = ai.spring || { pitchDeg: 0, rollDeg: 0, squash: 0, bounceY: 0 };
-      aiMesh.jellyChassis.position.y = clamp(spring.bounceY, -0.24, 0.28);
+      aiMesh.jellyChassis.position.y = clamp(spring.bounceY, -0.12, 0.14);
       aiMesh.jellyChassis.rotation.x = ((spring.pitchDeg || 0) * Math.PI) / 180;
       aiMesh.jellyChassis.rotation.z = (-(spring.rollDeg || 0) * Math.PI) / 180;
       const sq = clamp(spring.squash || 0, -0.15, 0.20);

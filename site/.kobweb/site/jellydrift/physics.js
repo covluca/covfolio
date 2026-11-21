@@ -219,10 +219,10 @@ export function applyCollision(state, strength = 0.5, normalX = 0, normalZ = 0) 
   if (!state) return;
   const s = clamp(strength, 0.05, 1.5, 0.4);
   state.collisionPulse = Math.max(state.collisionPulse || 0, s);
-  state.springVel.squash += 0.95 * s;
-  state.springVel.pitchDeg += 8 * s;
-  state.springVel.rollDeg += (normalX * Math.cos(state.yaw) - normalZ * Math.sin(state.yaw)) * 15 * s;
-  state.springVel.bounceY += 0.55 * s;
+  state.springVel.squash += 0.45 * s;
+  state.springVel.pitchDeg += 4.5 * s;
+  state.springVel.rollDeg += (normalX * Math.cos(state.yaw) - normalZ * Math.sin(state.yaw)) * 5 * s;
+  state.springVel.bounceY += 0.24 * s;
 }
 
 /**
@@ -241,8 +241,9 @@ export function applyTrackBoundary(state, track, dt = FIXED_DT) {
   state.trackS = proj.s;
   state.lateralOffset = proj.lateralOffset;
 
-  // Vertical elevation & crest airtime physics
-  const groundY = proj.point.y;
+  // Vertical elevation across banked road cross-section & crest airtime physics
+  const bankHeight = (proj.binormal && Number.isFinite(proj.binormal.y) ? proj.binormal.y : 0) * proj.lateralOffset;
+  const groundY = proj.point.y - bankHeight;
   const slopeVelY = clamp((groundY - state.prevGroundY) / dtSafe, -22, 22, 0);
   const slopeAccelY = (slopeVelY - state.prevSlopeVelY) / dtSafe;
   state.prevGroundY = groundY;
@@ -255,9 +256,9 @@ export function applyTrackBoundary(state, track, dt = FIXED_DT) {
     const impact = Math.max(0, slopeVelY - state.verticalVel);
     if (state.airborne && impact > 2.0) {
       const jelly = clamp(state.def?.jellyBounce ?? 1.0, 0.65, 1.5, 1.0);
-      state.springVel.bounceY -= clamp(impact * 0.10 * jelly, 0, 1.0, 0);
-      state.springVel.squash += clamp(impact * 0.08 * jelly, 0, 0.9, 0);
-      state.springVel.pitchDeg += clamp(impact * 1.4 * jelly, 0, 14, 0);
+      state.springVel.bounceY -= clamp(impact * 0.06 * jelly, 0, 0.6, 0);
+      state.springVel.squash += clamp(impact * 0.05 * jelly, 0, 0.5, 0);
+      state.springVel.pitchDeg += clamp(impact * 0.9 * jelly, 0, 8, 0);
     }
     state.pos.y = groundY;
     state.verticalVel = slopeVelY;
@@ -269,20 +270,28 @@ export function applyTrackBoundary(state, track, dt = FIXED_DT) {
 
   // Subtle terrain compression bounce on dips/crests
   if (!state.airborne && Number.isFinite(slopeAccelY)) {
-    state.springVel.bounceY += clamp(-slopeAccelY * 0.0045, -0.45, 0.45, 0);
+    state.springVel.bounceY += clamp(-slopeAccelY * 0.0022, -0.22, 0.22, 0);
   }
 
-  state.surfacePitchDeg = (-Math.asin(clamp(proj.tangent.y, -0.7, 0.7, 0)) * 180) / Math.PI;
-  state.surfaceRollDeg = ((proj.bank || 0) * 180) / Math.PI;
+  // Project road normal into car's actual heading/right vectors so all 4 tires match slope & bank at any yaw
+  const cFx = Math.sin(state.yaw);
+  const cFz = Math.cos(state.yaw);
+  const cRx = -Math.cos(state.yaw);
+  const cRz = Math.sin(state.yaw);
+  state.surfacePitchDeg =
+    (Math.asin(clamp(cFx * proj.normal.x + cFz * proj.normal.z, -0.65, 0.65, 0)) * 180) / Math.PI;
+  state.surfaceRollDeg =
+    (Math.asin(clamp(cRx * proj.normal.x + cRz * proj.normal.z, -0.5, 0.5, 0)) * 180) / Math.PI;
   state.surfaceNormal = { x: proj.normal.x, y: proj.normal.y, z: proj.normal.z };
 
-  // Barrier containment & elastic wall bounce
+  // Barrier containment & smooth guardrail glancing
   const limit = Math.max(2.0, proj.halfWidth - CAR_RADIUS);
   if (Math.abs(proj.lateralOffset) > limit) {
     const sign = proj.lateralOffset > 0 ? 1 : -1;
-    state.pos.x = proj.point.x + proj.right.x * (sign * limit);
-    state.pos.z = proj.point.z + proj.right.z * (sign * limit);
-    state.lateralOffset = sign * limit;
+    const clampedLat = limit - 0.04;
+    state.pos.x = proj.point.x + proj.right.x * (sign * clampedLat);
+    state.pos.z = proj.point.z + proj.right.z * (sign * clampedLat);
+    state.lateralOffset = sign * clampedLat;
 
     // Outward normal (toward barrier)
     const nx = sign * proj.right.x;
@@ -295,10 +304,10 @@ export function applyTrackBoundary(state, track, dt = FIXED_DT) {
     const vT = state.vel.x * tx + state.vel.z * tz;
 
     if (vN > 0) {
-      const isHeavyImpact = vN > 2.0 && state.wallCooldown <= 0;
-      const restitution = isHeavyImpact ? 0.28 : 0.12;
-      const vNNew = -Math.min(vN * restitution, 5.5);
-      const vTNew = vT * (isHeavyImpact ? 0.90 : 0.985);
+      const isHeavyImpact = vN > 4.2 && state.wallCooldown <= 0;
+      const restitution = isHeavyImpact ? 0.16 : 0.08;
+      const vNNew = -Math.min(vN * restitution, 3.6);
+      const vTNew = vT * (isHeavyImpact ? 0.92 : 0.985);
       state.vel.x = vTNew * tx + vNNew * nx;
       state.vel.z = vTNew * tz + vNNew * nz;
 
@@ -306,7 +315,7 @@ export function applyTrackBoundary(state, track, dt = FIXED_DT) {
       const trackAngle = Math.atan2(tx, tz);
       const yawDiff = wrapAngleRad(trackAngle - state.yaw);
       if (vT > -2.0 && Math.abs(yawDiff) > 0.08 && Math.abs(yawDiff) < 2.25) {
-        state.yaw = wrapAngleRad(state.yaw + yawDiff * (isHeavyImpact ? 0.52 : 0.20));
+        state.yaw = wrapAngleRad(state.yaw + yawDiff * (isHeavyImpact ? 0.36 : 0.16));
       }
 
       const fx = Math.sin(state.yaw);
@@ -317,8 +326,8 @@ export function applyTrackBoundary(state, track, dt = FIXED_DT) {
       state.vLateral = state.vel.x * rx + state.vel.z * rz;
 
       if (isHeavyImpact) {
-        applyCollision(state, clamp(vN / 20, 0.22, 1.0, 0.35), nx, nz);
-        state.wallCooldown = 0.22;
+        applyCollision(state, clamp(vN / 22, 0.22, 0.95, 0.35), nx, nz);
+        state.wallCooldown = 0.42;
       }
     }
   }
@@ -396,9 +405,10 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
     const maxFwd = Math.min(def.maxSpeed || def.topSpeed || 44, MAX_TOP_SPEED_MS);
     const maxRev = -(def.reverseSpeed || 13);
 
-    // Longitudinal forces
+    // Longitudinal forces with progressive touge torque curve (~2.2s 0-100 km/h)
     if (throttle) {
-      const accelForce = def.accel || 34;
+      const speedFrac = clamp(Math.max(0, vForward) / Math.max(1, maxFwd), 0, 1, 0);
+      const accelForce = (def.accel || 34) * (0.48 - 0.15 * speedFrac);
       vForward += accelForce * h;
       state.brakedFromForward = false;
       state.brakeStopHoldSec = 0;
@@ -406,7 +416,7 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
 
     if (wantDrift && vForward > 0.2) {
       // Spacebar = mechanical rear handbrake: scrubs forward speed without ever reversing
-      const handbrakeDecel = throttle ? 11.5 : 16.5;
+      const handbrakeDecel = throttle ? 7.5 : 13.5;
       const nextFwd = Math.max(0, vForward - handbrakeDecel * h);
       vForward = nextFwd < 0.06 && !throttle ? 0 : nextFwd;
     }
@@ -424,7 +434,7 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
           state.brakedFromForward = false;
         }
       } else {
-        vForward -= (def.accel || 34) * 0.56 * h;
+        vForward -= (def.accel || 34) * 0.42 * h;
       }
     } else if (!throttle) {
       state.brakedFromForward = false;
@@ -460,17 +470,18 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
     const rawSlip = vForward > 1.2 ? Math.atan2(vRight, vForward) : 0;
     const driftGrip = clamp(def.driftGrip || 1.0, 0.75, 1.4, 1.0);
 
-    // Agile touge steering yaw authority (tight hairpin turning radius without high-speed twitch)
-    const lowSpdRamp = clamp(speedAbs / 5.0, 0, 1, 0);
+    // Agile touge steering yaw authority (smooth low-speed ramp prevents endless donuts)
+    const lowSpdRamp = clamp(speedAbs / 7.2, 0, 1, 0);
     const hiSpdTaper = 1 - 0.16 * clamp((speedAbs - 18.0) / 15.0, 0, 1, 0);
     const dirSign = vForward >= -0.2 ? 1 : -1;
-    const steerBase = (def.steerRate || 2.3) * 1.18;
+    const steerBase = (def.steerRate || 2.3) * 0.96;
     let yawRate = state.steerSmoothed * steerBase * lowSpdRamp * hiSpdTaper * dirSign;
 
     if (driftActive) {
       // Back-heavy rear pivot into tight touge hairpins when handbrake/drift is active
-      const handbrakeKick = wantDrift ? 1.30 : 1.22;
-      yawRate *= steer * rawSlip >= 0 ? handbrakeKick : 1.08;
+      const hbSpeedFactor = clamp((speedAbs - 6.0) / 14.0, 0, 1, 0);
+      const handbrakeKick = wantDrift ? 1.05 + 0.20 * hbSpeedFactor : 1.15;
+      yawRate *= steer * rawSlip >= 0 ? handbrakeKick : 1.06;
       // Subtle lateral scrub proportional to slip angle
       vForward *= 1 - (0.02 + 0.04 * clamp(Math.abs(rawSlip), 0, 1, 0)) * h;
     }
@@ -483,17 +494,23 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
       rearGripFactor *= 0.84;
     }
     const baseLatDamp = 14.2 * rearGripFactor;
-    const driftLatDamp = Math.abs(steer) > 0.05 ? (wantDrift ? 2.85 : 3.45) / driftGrip : 7.5;
+    const driftLatDamp = Math.abs(steer) > 0.05 ? (wantDrift ? 3.25 : 3.65) / driftGrip : 7.8;
     let latDamping = baseLatDamp + (driftLatDamp - baseLatDamp) * (state.driftExitBlend || 0);
 
-    if (Math.abs(rawSlip) > 0.74) {
-      const excess = clamp((Math.abs(rawSlip) - 0.74) / (MAX_SLIP_RAD - 0.74), 0, 1.5, 0);
+    // Front-wheel caster & counter-steer alignment catch prevents snap spinouts
+    if (steer * rawSlip < -0.02 || (Math.abs(steer) < 0.08 && Math.abs(rawSlip) > 0.08)) {
+      yawRate -= rawSlip * (Math.abs(steer) < 0.08 ? 1.35 : 0.95);
+      latDamping += Math.abs(steer) < 0.08 ? 3.5 : 2.2;
+    }
+
+    if (Math.abs(rawSlip) > 0.58) {
+      const excess = clamp((Math.abs(rawSlip) - 0.58) / (0.86 - 0.58), 0, 1.5, 0);
       if (steer * rawSlip > 0) {
-        // Softly limit deeper inward oversteer beyond ~42 deg
-        yawRate *= Math.max(0.12, 1 - excess * 0.82);
+        // Softly limit deeper inward oversteer beyond ~33-49 deg
+        yawRate *= Math.max(0.12, 1 - excess * 0.84);
       }
-      latDamping += 8.5 * excess;
-      yawRate -= Math.sign(rawSlip) * excess * 1.65;
+      latDamping += 9.5 * excess;
+      yawRate -= Math.sign(rawSlip) * excess * 1.85;
     }
 
     // Rotational yaw inertia so steering & rear weight transitions carry realistic momentum
@@ -562,26 +579,26 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
 
     // Signs: braking (longAccel < 0) -> pitchDeg > 0 (nose dive); accel/back-heavy -> pitchDeg < 0 (rear squat)
     const throttleBias = input && input.throttle ? 1.35 : 0;
-    const pitchTarget = clamp((-longAccel * 0.14 - throttleBias) * jelly, -7.5, 5.5, 0);
+    const pitchTarget = clamp((-longAccel * 0.085 - throttleBias * 0.8) * jelly, -4.2, 3.6, 0);
     // Signs: left turn (latAccel > 0) -> rollDeg < 0 (outward right lean via chassis.rotation.z = -deg2rad(rollDeg))
-    const rollTarget = clamp(-latAccel * 0.16 * jelly, -9.5, 9.5, 0);
+    const rollTarget = clamp(-latAccel * 0.085 * jelly, -4.5, 4.5, 0);
     // Symmetric >= 0 squash under cornering & impacts
     const squashTarget = clamp(
-      (Math.abs(latAccel) * 0.0014 + Math.max(0, state.collisionPulse) * 0.11) * jelly,
+      (Math.abs(latAccel) * 0.0009 + Math.max(0, state.collisionPulse) * 0.07) * jelly,
       0,
-      0.14,
+      0.09,
       0
     );
     const bounceTarget = 0;
 
-    const omegaPitch = 13.5;
-    const zetaPitch = clamp(0.66 / Math.sqrt(jelly), 0.52, 0.86, 0.66);
-    const omegaRoll = 12.8;
-    const zetaRoll = clamp(0.68 / Math.sqrt(jelly), 0.54, 0.86, 0.68);
+    const omegaPitch = 14.5;
+    const zetaPitch = clamp(0.78 / Math.sqrt(jelly), 0.65, 0.92, 0.78);
+    const omegaRoll = 14.0;
+    const zetaRoll = clamp(0.80 / Math.sqrt(jelly), 0.68, 0.92, 0.80);
     const omegaSquash = 15.5;
-    const zetaSquash = clamp(0.66 / Math.sqrt(jelly), 0.52, 0.86, 0.66);
-    const omegaBounce = 14.5;
-    const zetaBounce = clamp(0.70 / Math.sqrt(jelly), 0.55, 0.88, 0.70);
+    const zetaSquash = clamp(0.76 / Math.sqrt(jelly), 0.62, 0.90, 0.76);
+    const omegaBounce = 15.0;
+    const zetaBounce = clamp(0.78 / Math.sqrt(jelly), 0.65, 0.92, 0.78);
 
     [state.spring.pitchDeg, state.springVel.pitchDeg] = stepSpringChannel(
       state.spring.pitchDeg,

@@ -77,7 +77,7 @@ export function createCameraRig(THREE, aspect) {
     if (!initialized) {
       followYaw = yaw;
     } else if (dt > 0) {
-      const yawFollowRate = 6.2;
+      const yawFollowRate = 7.2;
       followYaw = wrapAngleRad(followYaw + wrapAngleRad(yaw - followYaw) * (1 - Math.exp(-dt * yawFollowRate)));
     }
 
@@ -89,18 +89,18 @@ export function createCameraRig(THREE, aspect) {
     }
 
     if (mode === "CHASE") {
-      const slipShift = clamp(player.slip || 0, -0.7, 0.7) * 0.32;
+      const slipShift = clamp(player.slip || 0, -0.65, 0.65) * 0.24;
       const orbit = followYaw + yawOffset - slipShift;
       const ofx = Math.sin(orbit);
       const ofz = Math.cos(orbit);
 
-      const dist = 8.8 + speedFactor * 0.8;
+      const dist = 8.4 + speedFactor * 0.75;
       if (!initialized || dt <= 0) {
         smoothPy = py;
       } else {
         smoothPy += (py - smoothPy) * (1 - Math.exp(-dt * 5.5));
       }
-      const height = smoothPy + 3.85;
+      const height = smoothPy + 3.55;
 
       desired.set(px - ofx * dist, height, pz - ofz * dist);
       look.set(px + fx * 4.8, smoothPy + 1.25, pz + fz * 4.8);
@@ -130,22 +130,16 @@ export function createCameraRig(THREE, aspect) {
         eyeAnchor.getWorldPosition(desired);
         playerMesh.driverLookTarget.getWorldPosition(look);
       } else {
-        desired.set(px - rx * 0.25 + fx * 0.08, py + 1.04, pz - rz * 0.25 + fz * 0.08);
-        look.set(px + fx * 12.0, py + 0.92, pz + fz * 12.0);
+        desired.set(px - rx * 0.22 + fx * 0.24, py + 1.03, pz - rz * 0.22 + fz * 0.24);
+        look.set(px + fx * 14.0 - rx * 0.12, py + 0.96, pz + fz * 14.0 - rz * 0.12);
       }
-
-      // Lift and center the eye slightly above the modeled anchor so the dash,
-      // steering wheel, and hood stay below the driving sightline.
-      desired.x += fx * 0.10;
-      desired.y += 0.08;
-      desired.z += fz * 0.10;
 
       // Let the view lead a small amount into a slide without turning the
       // camera into a distracting chase-orbit.
       const slip = clamp(player.slip || 0, -0.7, 0.7);
-      look.x += rx * slip * 1.45 + fx * 1.2;
-      look.y += 0.10;
-      look.z += rz * slip * 1.45 + fz * 1.2;
+      look.x += rx * slip * 1.15 + fx * 1.2;
+      look.y += 0.04;
+      look.z += rz * slip * 1.15 + fz * 1.2;
 
       if (!initialized || dt <= 0) {
         driverPosition.copy(desired);
@@ -159,7 +153,7 @@ export function createCameraRig(THREE, aspect) {
       camera.position.copy(driverPosition);
       initialized = true;
       const fpvSpeedFactor = clamp(speed / 11.11, 0, 1);
-      const targetFov = 74 + fpvSpeedFactor * 5;
+      const targetFov = 68 + fpvSpeedFactor * 4;
       if (Math.abs(camera.fov - targetFov) > 0.05) {
         camera.fov = targetFov;
         camera.updateProjectionMatrix();

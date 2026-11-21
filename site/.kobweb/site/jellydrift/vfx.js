@@ -70,7 +70,7 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
     options = sceneOrOpts || {};
   }
 
-  const MAX_SKIDS = 280;
+  const MAX_SKIDS = 360;
   const MAX_SMOKE = 176;
   const MAX_SPARKS = 96;
   const HIDDEN_Y = -9999;
@@ -89,20 +89,19 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
   const _zeroScale = new THREE.Vector3(0, 0, 0);
   const _up = new THREE.Vector3(0, 1, 0);
   const _normal = new THREE.Vector3(0, 1, 0);
-  const _fwd = new THREE.Vector3(0, 0, 1);
 
   // 1. Pooled Skid Marks (InstancedMesh ring buffer)
   // One quad per wheel per tick, stretched between the last and current contact
-  // patch so the two ribbons read as continuous parallel lines instead of beads.
+  // patch so the two ribbons read as continuous parallel lines on sloped/banked asphalt.
   const SKID_LEN = 1.5;
-  const skidGeo = new THREE.PlaneGeometry(0.30, SKID_LEN);
+  const skidGeo = new THREE.PlaneGeometry(0.24, SKID_LEN);
   skidGeo.rotateX(-Math.PI / 2);
   disposables.push(skidGeo);
 
   const skidMat = new THREE.MeshBasicMaterial({
-    color: 0x10131a,
+    color: 0x151820,
     transparent: true,
-    opacity: 0.62,
+    opacity: 0.44,
     depthWrite: false,
     polygonOffset: true,
     polygonOffsetFactor: -2,
@@ -126,39 +125,85 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
   // Per-side last ribbon contact point (null = pen lift, start a fresh ribbon)
   const skidLast = [null, null];
   let smokeTimer = 0;
-  let sparkTimer = 0;
-  let wasBoosting = false;
 
-  // 2. Pooled Tire Smoke (Points ring buffer)
+  // 2. Pooled Tire Smoke (Soft white billowing ShaderMaterial with per-particle size & alpha)
   const smokePositions = new Float32Array(MAX_SMOKE * 3);
+  const smokeSizes = new Float32Array(MAX_SMOKE);
+  const smokeAlphas = new Float32Array(MAX_SMOKE);
   const smokeColors = new Float32Array(MAX_SMOKE * 3);
   const smokeVel = new Float32Array(MAX_SMOKE * 3);
   const smokeLife = new Float32Array(MAX_SMOKE);
   const smokeMaxLife = new Float32Array(MAX_SMOKE);
   const smokeBaseY = new Float32Array(MAX_SMOKE);
-  const smokeBaseCol = new Float32Array(MAX_SMOKE * 3);
 
   for (let i = 0; i < MAX_SMOKE; i++) {
     smokePositions[i * 3 + 1] = HIDDEN_Y;
+    smokeSizes[i] = 0.55;
+    smokeAlphas[i] = 0;
+    smokeColors[i * 3] = 0.95;
+    smokeColors[i * 3 + 1] = 0.96;
+    smokeColors[i * 3 + 2] = 0.98;
   }
 
   const smokeGeo = new THREE.BufferGeometry();
   smokeGeo.setAttribute("position", new THREE.BufferAttribute(smokePositions, 3));
   smokeGeo.setAttribute("color", new THREE.BufferAttribute(smokeColors, 3));
+  smokeGeo.setAttribute("aSize", new THREE.BufferAttribute(smokeSizes, 1));
+  smokeGeo.setAttribute("aAlpha", new THREE.BufferAttribute(smokeAlphas, 1));
   disposables.push(smokeGeo);
 
   const smokeTex = createSoftSmokeTexture(THREE);
   if (smokeTex) disposables.push(smokeTex);
 
-  const smokeMat = new THREE.PointsMaterial({
-    size: 1.08,
-    map: smokeTex,
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.52,
-    depthWrite: false,
-    sizeAttenuation: true
-  });
+  const ShaderMatCtor = THREE.ShaderMaterial || VendorTHREE.ShaderMaterial;
+  const ColorCtor = THREE.Color || VendorTHREE.Color;
+  const smokeMat =
+    typeof ShaderMatCtor === "function"
+      ? new ShaderMatCtor({
+          uniforms: {
+            uColor: { value: new ColorCtor(0xf2f4f8) },
+            uMap: { value: smokeTex },
+            uHasMap: { value: smokeTex ? 1.0 : 0.0 }
+          },
+          vertexShader: `
+            attribute float aSize;
+            attribute float aAlpha;
+            varying float vAlpha;
+            void main() {
+              vAlpha = aAlpha;
+              vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+              gl_PointSize = clamp(aSize * (280.0 / max(1.0, -mvPosition.z)), 2.0, 92.0);
+              gl_Position = projectionMatrix * mvPosition;
+            }
+          `,
+          fragmentShader: `
+            uniform vec3 uColor;
+            uniform sampler2D uMap;
+            uniform float uHasMap;
+            varying float vAlpha;
+            void main() {
+              vec2 c = gl_PointCoord - vec2(0.5);
+              float r = length(c) * 2.0;
+              float mask = uHasMap > 0.5
+                ? texture2D(uMap, gl_PointCoord).a
+                : smoothstep(1.0, 0.12, r);
+              float a = mask * vAlpha;
+              if (a < 0.01) discard;
+              gl_FragColor = vec4(uColor, a);
+            }
+          `,
+          transparent: true,
+          depthWrite: false
+        })
+      : new THREE.PointsMaterial({
+          size: 0.9,
+          map: smokeTex,
+          color: 0xf2f4f8,
+          transparent: true,
+          opacity: 0.45,
+          depthWrite: false,
+          sizeAttenuation: true
+        });
   disposables.push(smokeMat);
 
   const smokePoints = new THREE.Points(smokeGeo, smokeMat);
@@ -168,8 +213,10 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
 
   let smokeCursor = 0;
 
-  // 3. Pooled Collision Sparks (Additive Points ring buffer)
+  // 3. Pooled Collision Sparks (Circular radial-glow additive ShaderMaterial — zero giant squares)
   const sparkPositions = new Float32Array(MAX_SPARKS * 3);
+  const sparkSizes = new Float32Array(MAX_SPARKS);
+  const sparkAlphas = new Float32Array(MAX_SPARKS);
   const sparkColors = new Float32Array(MAX_SPARKS * 3);
   const sparkVel = new Float32Array(MAX_SPARKS * 3);
   const sparkLife = new Float32Array(MAX_SPARKS);
@@ -178,22 +225,56 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
 
   for (let i = 0; i < MAX_SPARKS; i++) {
     sparkPositions[i * 3 + 1] = HIDDEN_Y;
+    sparkSizes[i] = 0.22;
+    sparkAlphas[i] = 0;
   }
 
   const sparkGeo = new THREE.BufferGeometry();
   sparkGeo.setAttribute("position", new THREE.BufferAttribute(sparkPositions, 3));
   sparkGeo.setAttribute("color", new THREE.BufferAttribute(sparkColors, 3));
+  sparkGeo.setAttribute("aSize", new THREE.BufferAttribute(sparkSizes, 1));
+  sparkGeo.setAttribute("aAlpha", new THREE.BufferAttribute(sparkAlphas, 1));
   disposables.push(sparkGeo);
 
-  const sparkMat = new THREE.PointsMaterial({
-    size: 0.44,
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.95,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    sizeAttenuation: true
-  });
+  const sparkMat =
+    typeof ShaderMatCtor === "function"
+      ? new ShaderMatCtor({
+          vertexShader: `
+            attribute float aSize;
+            attribute float aAlpha;
+            varying float vAlpha;
+            void main() {
+              vAlpha = aAlpha;
+              vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+              gl_PointSize = clamp(aSize * (260.0 / max(1.0, -mvPosition.z)), 2.0, 18.0);
+              gl_Position = projectionMatrix * mvPosition;
+            }
+          `,
+          fragmentShader: `
+            varying float vAlpha;
+            void main() {
+              vec2 c = gl_PointCoord - vec2(0.5);
+              float r = length(c) * 2.0;
+              float mask = smoothstep(1.0, 0.05, r);
+              float a = mask * vAlpha;
+              if (a < 0.01) discard;
+              vec3 col = mix(vec3(1.0, 0.45, 0.08), vec3(1.0, 0.85, 0.45), mask);
+              gl_FragColor = vec4(col, a);
+            }
+          `,
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        })
+      : new THREE.PointsMaterial({
+          size: 0.2,
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.9,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          sizeAttenuation: true
+        });
   disposables.push(sparkMat);
 
   const sparkPoints = new THREE.Points(sparkGeo, sparkMat);
@@ -241,7 +322,7 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
   let elapsed = 0;
   let speedLinesState = computeSpeedLinesState();
 
-  function emit(x, y, z, r = 0.85, g = 0.87, b = 0.92, life = 0.55) {
+  function emit(x, y, z, r = 0.94, g = 0.95, b = 0.98, life = 0.58) {
     if (disposed) return;
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
     const i = smokeCursor;
@@ -251,22 +332,20 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
     smokePositions[idx3 + 1] = y;
     smokePositions[idx3 + 2] = z;
 
-    smokeVel[idx3] = (Math.random() - 0.5) * 1.4;
-    smokeVel[idx3 + 1] = 0.85 + Math.random() * 0.9;
-    smokeVel[idx3 + 2] = (Math.random() - 0.5) * 1.4;
+    smokeVel[idx3] = (Math.random() - 0.5) * 1.1;
+    smokeVel[idx3 + 1] = 0.72 + Math.random() * 0.65;
+    smokeVel[idx3 + 2] = (Math.random() - 0.5) * 1.1;
 
-    smokeBaseCol[idx3] = clamp(r, 0, 1, 0.85);
-    smokeBaseCol[idx3 + 1] = clamp(g, 0, 1, 0.87);
-    smokeBaseCol[idx3 + 2] = clamp(b, 0, 1, 0.92);
+    smokeColors[idx3] = clamp(r, 0, 1, 0.95);
+    smokeColors[idx3 + 1] = clamp(g, 0, 1, 0.96);
+    smokeColors[idx3 + 2] = clamp(b, 0, 1, 0.98);
 
-    smokeColors[idx3] = smokeBaseCol[idx3];
-    smokeColors[idx3 + 1] = smokeBaseCol[idx3 + 1];
-    smokeColors[idx3 + 2] = smokeBaseCol[idx3 + 2];
-
-    const l = clamp(life, 0.08, 2.0, 0.55);
+    const l = clamp(life, 0.08, 2.0, 0.58);
     smokeLife[i] = l;
     smokeMaxLife[i] = l;
-    smokeBaseY[i] = y - 0.08;
+    smokeBaseY[i] = y - 0.06;
+    smokeSizes[i] = 0.55;
+    smokeAlphas[i] = 0.48;
   }
 
   function emitSkidSegment(pos, normal = null, forwardDir = null, intensity = 1, stretch = 1) {
@@ -309,34 +388,34 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
     skidMesh.instanceMatrix.needsUpdate = true;
   }
 
-  // Stitch a ribbon segment between the last and current wheel contact patch.
-  // Returns the new contact point so the caller can keep per-side continuity.
+  // Stitch a ribbon segment between the last and current wheel contact patch across hills & banking.
   function layRibbon(sideIdx, x, y, z, normal, fallbackYaw, intensity) {
     const prev = skidLast[sideIdx];
     skidLast[sideIdx] = { x, y, z };
     if (!prev) return;
 
     const dx = x - prev.x;
+    const dy = y - prev.y;
     const dz = z - prev.z;
-    const dist = Math.hypot(dx, dz);
+    const dist = Math.hypot(dx, dy, dz);
     if (!Number.isFinite(dist) || dist < 0.02) return;
     // Jumped (respawn / teleport): start a new ribbon instead of smearing a line
     if (dist > 4.5) return;
 
     const yaw = Math.abs(dx) + Math.abs(dz) > 1e-4 ? Math.atan2(dx, dz) : fallbackYaw;
     emitSkidSegment(
-      { x: (prev.x + x) * 0.5, y: y, z: (prev.z + z) * 0.5 },
+      { x: (prev.x + x) * 0.5, y: (prev.y + y) * 0.5, z: (prev.z + z) * 0.5 },
       normal,
       yaw,
       intensity,
-      (dist / SKID_LEN) * 1.04
+      (dist / SKID_LEN) * 1.05
     );
   }
 
   function emitCollisionSparks(x, y, z, intensity = 1, normal = null) {
     if (disposed) return;
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
-    const count = Math.round(clamp(intensity * 18, 8, 28, 16));
+    const count = Math.round(clamp(intensity * 10, 6, 14, 10));
     const nX = finiteOr(normal?.x, 0);
     const nY = finiteOr(normal?.y, 0.5);
     const nZ = finiteOr(normal?.z, 0);
@@ -345,50 +424,24 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
       const i = sparkCursor;
       sparkCursor = (sparkCursor + 1) % MAX_SPARKS;
       const idx3 = i * 3;
-      sparkPositions[idx3] = x + (Math.random() - 0.5) * 0.6;
-      sparkPositions[idx3 + 1] = y + 0.3 + Math.random() * 0.35;
-      sparkPositions[idx3 + 2] = z + (Math.random() - 0.5) * 0.6;
+      sparkPositions[idx3] = x + (Math.random() - 0.5) * 0.45;
+      sparkPositions[idx3 + 1] = y + 0.18 + Math.random() * 0.22;
+      sparkPositions[idx3 + 2] = z + (Math.random() - 0.5) * 0.45;
 
-      sparkVel[idx3] = nX * 5 + (Math.random() - 0.5) * 14;
-      sparkVel[idx3 + 1] = 3.5 + nY * 4 + Math.random() * 6.5;
-      sparkVel[idx3 + 2] = nZ * 5 + (Math.random() - 0.5) * 14;
-
-      sparkColors[idx3] = 1.0;
-      sparkColors[idx3 + 1] = 0.62 + Math.random() * 0.35;
-      sparkColors[idx3 + 2] = 0.15;
-
-      const l = 0.28 + Math.random() * 0.32;
-      sparkLife[i] = l;
-      sparkMaxLife[i] = l;
-      sparkBaseY[i] = y + 0.06;
-    }
-  }
-
-  // Ground-hugging kerb sparks thrown off a rear tire mid-drift.
-  function emitKerbSparks(x, y, z, sideSign = 1, intensity = 1) {
-    if (disposed) return;
-    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
-    const count = Math.round(clamp(intensity * 7, 3, 10, 5));
-    for (let c = 0; c < count; c++) {
-      const i = sparkCursor;
-      sparkCursor = (sparkCursor + 1) % MAX_SPARKS;
-      const idx3 = i * 3;
-      sparkPositions[idx3] = x + (Math.random() - 0.5) * 0.16;
-      sparkPositions[idx3 + 1] = y + 0.05 + Math.random() * 0.08;
-      sparkPositions[idx3 + 2] = z + (Math.random() - 0.5) * 0.16;
-
-      sparkVel[idx3] = sideSign * (1.4 + Math.random() * 2.6) + (Math.random() - 0.5) * 2.0;
-      sparkVel[idx3 + 1] = 1.1 + Math.random() * 2.4;
-      sparkVel[idx3 + 2] = -1.2 + Math.random() * 2.4;
+      sparkVel[idx3] = nX * 3 + (Math.random() - 0.5) * 11;
+      sparkVel[idx3 + 1] = 1.5 + nY * 1.8 + Math.random() * 2.0;
+      sparkVel[idx3 + 2] = nZ * 3 + (Math.random() - 0.5) * 11;
 
       sparkColors[idx3] = 1.0;
-      sparkColors[idx3 + 1] = 0.66 + Math.random() * 0.3;
-      sparkColors[idx3 + 2] = 0.16;
+      sparkColors[idx3 + 1] = 0.68 + Math.random() * 0.28;
+      sparkColors[idx3 + 2] = 0.2;
 
-      const l = 0.16 + Math.random() * 0.22;
+      const l = 0.18 + Math.random() * 0.16;
       sparkLife[i] = l;
       sparkMaxLife[i] = l;
-      sparkBaseY[i] = y + 0.02;
+      sparkBaseY[i] = y + 0.04;
+      sparkSizes[i] = 0.24;
+      sparkAlphas[i] = 0.95;
     }
   }
 
@@ -478,52 +531,52 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
       const rrX = rearCenterX - leftX * trackHalf;
       const rrZ = rearCenterZ - leftZ * trackHalf;
 
+      const sinBankNy = Math.max(0.25, finiteOr(surfNorm?.y, 1));
+      const normX = finiteOr(surfNorm?.x, 0);
+      const normZ = finiteOr(surfNorm?.z, 0);
+      const rlOffsetX = (side) => -sinY * rearDist + leftX * trackHalf * side;
+      const rlOffsetZ = (side) => -cosY * rearDist + leftZ * trackHalf * side;
+      const wheelPlaneY = (side) => {
+        const dx = rlOffsetX(side);
+        const dz = rlOffsetZ(side);
+        const dy = -((dx * normX + dz * normZ) / sinBankNy);
+        return py + clamp(dy, -0.85, 0.85, 0);
+      };
+      const rlY = wheelPlaneY(1);
+      const rrY = wheelPlaneY(-1);
+
       // Skid marks & tire smoke during drift
       const slipMag = Math.abs(finiteOr(player?.slip, 0));
       if (driftActive) {
         const driftIntensity = clamp(0.75 + slipMag * 0.9, 0.7, 1.3, 1.0);
 
-        // Continuous twin skid ribbons: stitch each side between successive
-        // contact patches so the marks read as solid lines, not dashes.
+        // Continuous twin skid ribbons: stitch each side across slope/banked surface
         skidTimer += dtSafe;
         if (skidTimer >= SKID_INTERVAL) {
           skidTimer = 0;
-          layRibbon(0, rlX, py, rlZ, surfNorm, yaw, driftIntensity);
-          layRibbon(1, rrX, py, rrZ, surfNorm, yaw, driftIntensity);
+          layRibbon(0, rlX, rlY, rlZ, surfNorm, yaw, driftIntensity);
+          layRibbon(1, rrX, rrY, rrZ, surfNorm, yaw, driftIntensity);
         }
 
-        // Handbrake drift smoke: two puffs per rear tire with jitter for volume
-        // (emphasized for Spacebar handbrake lockup feel)
+        // Handbrake drift smoke: two bright white billowing puffs per rear tire
         smokeTimer += dtSafe;
         if (smokeTimer >= SMOKE_INTERVAL) {
           smokeTimer = 0;
           for (const side of [1, -1]) {
             const wx = rearCenterX + leftX * trackHalf * side;
             const wz = rearCenterZ + leftZ * trackHalf * side;
+            const wy = side > 0 ? rlY : rrY;
             for (let p = 0; p < 2; p++) {
               emit(
-                wx + (Math.random() - 0.5) * 0.34,
-                py + 0.12 + Math.random() * 0.16,
-                wz + (Math.random() - 0.5) * 0.34,
-                0.86,
-                0.88,
-                0.93,
-                0.55 + Math.random() * 0.2
+                wx + (Math.random() - 0.5) * 0.30,
+                wy + 0.10 + Math.random() * 0.14,
+                wz + (Math.random() - 0.5) * 0.30,
+                0.95,
+                0.96,
+                0.98,
+                0.52 + Math.random() * 0.22
               );
             }
-          }
-        }
-
-        // Kerb sparks: the outside tire grinds the shoulder above ~60 km/h
-        if (speedKmhVal > 60) {
-          sparkTimer += dtSafe;
-          const sparkRate = 1 / clamp(speedKmhVal / 42, 0.6, 2.4, 1.0);
-          if (sparkTimer >= sparkRate) {
-            sparkTimer = 0;
-            const side = Math.random() < 0.5 ? 1 : -1;
-            const wx = rearCenterX + leftX * trackHalf * side;
-            const wz = rearCenterZ + leftZ * trackHalf * side;
-            emitKerbSparks(wx, py + 0.02, wz, side, clamp(speedKmhVal / 90, 0.5, 1.4, 1.0));
           }
         }
       } else {
@@ -532,13 +585,12 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
         skidLast[1] = null;
         skidTimer = 0;
         smokeTimer = 0;
-        sparkTimer = 0;
       }
 
-      // Collision spark burst on rising collisionPulse
+      // Collision spark burst on rising collisionPulse (hard impacts only)
       const colPulse = finiteOr(player?.collisionPulse, 0);
-      if (colPulse > 0.18 && colPulse > lastCollisionPulse + 0.08) {
-        emitCollisionSparks(px, py + 0.35, pz, clamp(colPulse, 0.4, 1.5, 0.8), surfNorm);
+      if (colPulse > 0.28 && colPulse > lastCollisionPulse + 0.10) {
+        emitCollisionSparks(px, py + 0.22, pz, clamp(colPulse, 0.35, 1.2, 0.7), surfNorm);
       }
       lastCollisionPulse = colPulse;
 
@@ -546,7 +598,7 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
       // Handbrake drift smoke above is the primary feedback cue.
     }
 
-    // Advance smoke particle ring buffer
+    // Advance smoke particle ring buffer (grow size, fade alpha cleanly — never darken to black)
     let smokeDirty = false;
     for (let i = 0; i < MAX_SMOKE; i++) {
       if (smokeLife[i] <= 0) continue;
@@ -555,9 +607,8 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
       const idx3 = i * 3;
       if (smokeLife[i] <= 0) {
         smokePositions[idx3 + 1] = HIDDEN_Y;
-        smokeColors[idx3] = 0;
-        smokeColors[idx3 + 1] = 0;
-        smokeColors[idx3 + 2] = 0;
+        smokeSizes[i] = 0.55;
+        smokeAlphas[i] = 0;
       } else {
         smokePositions[idx3] += smokeVel[idx3] * dtSafe;
         smokePositions[idx3 + 1] = Math.max(
@@ -566,15 +617,16 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
         );
         smokePositions[idx3 + 2] += smokeVel[idx3 + 2] * dtSafe;
 
-        const fade = clamp(smokeLife[i] / Math.max(0.01, smokeMaxLife[i]), 0, 1, 0);
-        smokeColors[idx3] = smokeBaseCol[idx3] * fade;
-        smokeColors[idx3 + 1] = smokeBaseCol[idx3 + 1] * fade;
-        smokeColors[idx3 + 2] = smokeBaseCol[idx3 + 2] * fade;
+        const lifeRatio = clamp(smokeLife[i] / Math.max(0.01, smokeMaxLife[i]), 0, 1, 0);
+        const progress = 1 - lifeRatio;
+        smokeSizes[i] = 0.55 + progress * 1.15;
+        smokeAlphas[i] = 0.48 * lifeRatio;
       }
     }
     if (smokeDirty || driftActive) {
       smokeGeo.attributes.position.needsUpdate = true;
-      smokeGeo.attributes.color.needsUpdate = true;
+      smokeGeo.attributes.aSize.needsUpdate = true;
+      smokeGeo.attributes.aAlpha.needsUpdate = true;
     }
 
     // Advance spark particle ring buffer
@@ -586,9 +638,8 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
       const idx3 = i * 3;
       if (sparkLife[i] <= 0) {
         sparkPositions[idx3 + 1] = HIDDEN_Y;
-        sparkColors[idx3] = 0;
-        sparkColors[idx3 + 1] = 0;
-        sparkColors[idx3 + 2] = 0;
+        sparkSizes[i] = 0.08;
+        sparkAlphas[i] = 0;
       } else {
         sparkVel[idx3 + 1] -= 16 * dtSafe;
         sparkPositions[idx3] += sparkVel[idx3] * dtSafe;
@@ -599,14 +650,14 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
           sparkVel[idx3 + 1] = Math.abs(sparkVel[idx3 + 1]) * 0.45;
         }
         const fade = clamp(sparkLife[i] / Math.max(0.01, sparkMaxLife[i]), 0, 1, 0);
-        sparkColors[idx3] = 1.0 * fade;
-        sparkColors[idx3 + 1] = 0.72 * fade;
-        sparkColors[idx3 + 2] = 0.18 * fade;
+        sparkSizes[i] = 0.08 + 0.16 * fade;
+        sparkAlphas[i] = 0.95 * fade;
       }
     }
     if (sparkDirty) {
       sparkGeo.attributes.position.needsUpdate = true;
-      sparkGeo.attributes.color.needsUpdate = true;
+      sparkGeo.attributes.aSize.needsUpdate = true;
+      sparkGeo.attributes.aAlpha.needsUpdate = true;
     }
 
     renderSpeedLinesOverlay();
@@ -623,8 +674,6 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
     skidLast[0] = null;
     skidLast[1] = null;
     smokeTimer = 0;
-    sparkTimer = 0;
-    wasBoosting = false;
     smokeCursor = 0;
     sparkCursor = 0;
     lastCollisionPulse = 0;
@@ -639,16 +688,22 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
     for (let i = 0; i < MAX_SMOKE; i++) {
       smokeLife[i] = 0;
       smokePositions[i * 3 + 1] = HIDDEN_Y;
+      smokeSizes[i] = 0.55;
+      smokeAlphas[i] = 0;
     }
     smokeGeo.attributes.position.needsUpdate = true;
-    smokeGeo.attributes.color.needsUpdate = true;
+    smokeGeo.attributes.aSize.needsUpdate = true;
+    smokeGeo.attributes.aAlpha.needsUpdate = true;
 
     for (let i = 0; i < MAX_SPARKS; i++) {
       sparkLife[i] = 0;
       sparkPositions[i * 3 + 1] = HIDDEN_Y;
+      sparkSizes[i] = 0.08;
+      sparkAlphas[i] = 0;
     }
     sparkGeo.attributes.position.needsUpdate = true;
-    sparkGeo.attributes.color.needsUpdate = true;
+    sparkGeo.attributes.aSize.needsUpdate = true;
+    sparkGeo.attributes.aAlpha.needsUpdate = true;
 
     if (overlayCtx && overlayCanvas) {
       overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);

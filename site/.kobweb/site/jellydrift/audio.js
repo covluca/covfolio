@@ -23,6 +23,10 @@ export function createAudio() {
   let oscB = null;
   let oscC = null;
   let oscD = null;
+  let gainA = null;
+  let gainB = null;
+  let gainC = null;
+  let gainD = null;
   let growlSrc = null;
   let growlFilter = null;
   let growlGain = null;
@@ -97,40 +101,51 @@ export function createAudio() {
       try {
         ctx = new Ctor();
         master = ctx.createGain();
-        master.gain.value = muted ? 0 : 0.055;
+        master.gain.value = muted ? 0 : 0.045;
         master.connect(ctx.destination);
 
         // Dual-oscillator engine hum -> lowpass -> engineGain -> master
         engineFilter = ctx.createBiquadFilter();
         engineFilter.type = "lowpass";
-        engineFilter.frequency.value = 540;
-        engineFilter.Q.value = 1.2;
+        engineFilter.frequency.value = 340;
+        engineFilter.Q.value = 0.85;
 
         engineGain = ctx.createGain();
-        engineGain.gain.value = 0.85;
+        engineGain.gain.value = 0.78;
 
-        // Layered procedural engine: fundamental (A/B), sub rumble (C),
-        // harmonic growl (D) -> lowpass -> engineGain -> master.
+        // Warm procedural boxer/inline engine: real per-oscillator GainNodes (fundamental, 5th, sub, octave)
         oscA = ctx.createOscillator();
         oscA.type = "sawtooth";
-        oscA.frequency.value = 58;
+        oscA.frequency.value = 54;
+        gainA = ctx.createGain();
+        gainA.gain.value = 0.26;
 
         oscB = ctx.createOscillator();
         oscB.type = "triangle";
-        oscB.frequency.value = 87;
+        oscB.frequency.value = 81;
+        gainB = ctx.createGain();
+        gainB.gain.value = 0.22;
 
         oscC = ctx.createOscillator();
         oscC.type = "sine";
-        oscC.frequency.value = 50;
+        oscC.frequency.value = 27;
+        gainC = ctx.createGain();
+        gainC.gain.value = 0.36;
 
         oscD = ctx.createOscillator();
-        oscD.type = "sawtooth";
-        oscD.frequency.value = 50;
+        oscD.type = "triangle";
+        oscD.frequency.value = 108;
+        gainD = ctx.createGain();
+        gainD.gain.value = 0.10;
 
-        oscA.connect(engineFilter);
-        oscB.connect(engineFilter);
-        oscC.connect(engineFilter);
-        oscD.connect(engineFilter);
+        oscA.connect(gainA);
+        gainA.connect(engineFilter);
+        oscB.connect(gainB);
+        gainB.connect(engineFilter);
+        oscC.connect(gainC);
+        gainC.connect(engineFilter);
+        oscD.connect(gainD);
+        gainD.connect(engineFilter);
         engineFilter.connect(engineGain);
         engineGain.connect(master);
 
@@ -148,8 +163,8 @@ export function createAudio() {
 
           screechFilter = ctx.createBiquadFilter();
           screechFilter.type = "bandpass";
-          screechFilter.frequency.value = 1150;
-          screechFilter.Q.value = 5.5;
+          screechFilter.frequency.value = 920;
+          screechFilter.Q.value = 3.2;
 
           screechGain = ctx.createGain();
           screechGain.gain.value = 0;
@@ -159,15 +174,15 @@ export function createAudio() {
           screechGain.connect(master);
           screechSrc.start();
 
-          // Looped noise "engine growl" layer (procedural, no new asset)
+          // Looped noise "engine growl" layer (subtle intake texture)
           growlSrc = ctx.createBufferSource();
           growlSrc.buffer = noiseBuffer;
           growlSrc.loop = true;
 
           growlFilter = ctx.createBiquadFilter();
           growlFilter.type = "lowpass";
-          growlFilter.frequency.value = 900;
-          growlFilter.Q.value = 2.0;
+          growlFilter.frequency.value = 420;
+          growlFilter.Q.value = 1.2;
 
           growlGain = ctx.createGain();
           growlGain.gain.value = 0;
@@ -210,6 +225,10 @@ export function createAudio() {
         oscB = null;
         oscC = null;
         oscD = null;
+        gainA = null;
+        gainB = null;
+        gainC = null;
+        gainD = null;
         screechSrc = null;
         screechFilter = null;
         screechGain = null;
@@ -246,7 +265,7 @@ export function createAudio() {
     if (disposed || !ctx) return;
     const now = finite(ctx.currentTime, 0);
     if (master) {
-      safeSetTarget(master.gain, muted ? 0 : 0.055, now, 0.03);
+      safeSetTarget(master.gain, muted ? 0 : 0.045, now, 0.03);
     }
     if (muted && ctx.state === "running" && typeof ctx.suspend === "function") {
       try {
@@ -524,9 +543,21 @@ export function createAudio() {
     // (OC-4: cars never boost, so these are suppressed)
     wasBoosting = isBoosting;
 
-    // Engine RPM proxy from speed; load from boost/slip.
-    const rpm = clamp(spd * 1.35 + 65, 40, 360);
-    const rpmNorm = clamp((rpm - 40) / 320, 0, 1);
+    // Simulated 5-speed gearbox RPM curve avoids shrill alarm-siren runaway across speeds
+    let rpmNorm = 0.10;
+    if (spd >= 1.5) {
+      const bands = [0, 32, 56, 80, 102, 130];
+      let gIdx = 0;
+      for (let i = 0; i < bands.length - 1; i++) {
+        if (spd >= bands[i]) gIdx = i;
+      }
+      const lo = bands[gIdx];
+      const hi = bands[gIdx + 1];
+      const frac = clamp((spd - lo) / Math.max(1, hi - lo), 0, 1, 0);
+      const gearFloor = gIdx === 0 ? 0.14 : 0.36;
+      rpmNorm = clamp(gearFloor + frac * (0.94 - gearFloor), 0.10, 0.96, 0.25);
+    }
+
     let load = 0;
     if (isBoosting) {
       load = 1;
@@ -536,36 +567,35 @@ export function createAudio() {
       load = typeof boostOrSlip === "number" ? clamp(Math.abs(boostOrSlip), 0.25, 1, 0.72) : 0.72;
     }
 
-    // Layered procedural engine: A/B fundamentals rise with RPM, C sub-rumble
-    // fades as RPM climbs, D harmonic layer gets raspier with RPM and load.
-    const baseFreq = pos(45 + 295 * rpmNorm + (isBoosting ? 26 : 0), 20);
-    safeSetTarget(oscA.frequency, baseFreq, now, 0.035);
-    safeSetTarget(oscB.frequency, pos(baseFreq * 1.35, 20), now, 0.035);
-    safeSetTarget(oscC.frequency, pos(baseFreq * 0.42, 20), now, 0.035);
-    safeSetTarget(oscD.frequency, pos(baseFreq * 3.0, 20), now, 0.035);
+    // Warm exhaust harmonics (A: fundamental, B: musical 5th, C: sub octave, D: warm octave)
+    const baseFreq = pos(46 + 88 * rpmNorm, 20);
+    safeSetTarget(oscA.frequency, baseFreq, now, 0.065);
+    safeSetTarget(oscB.frequency, pos(baseFreq * 1.5, 20), now, 0.065);
+    safeSetTarget(oscC.frequency, pos(baseFreq * 0.5, 20), now, 0.065);
+    safeSetTarget(oscD.frequency, pos(baseFreq * 2.0, 20), now, 0.065);
 
-    // Timbre shifts with RPM and load: brighter filter + harmonic mix up high,
-    // dirty growl noise layer while loaded.
-    safeSetTarget(engineFilter.frequency, pos(640 + 1600 * rpmNorm + 500 * load, 120), now, 0.045);
-    safeSetTarget(engineFilter.Q, pos(1.15 + 0.7 * rpmNorm + 0.5 * load, 0.6), now, 0.06);
-    safeSetTarget(engineGain.gain, pos(0.9 + 0.07 * rpmNorm + 0.06 * load, 0.2), now, 0.04);
+    if (gainA) safeSetTarget(gainA.gain, 0.26, now, 0.05);
+    if (gainB) safeSetTarget(gainB.gain, 0.22, now, 0.05);
+    if (gainC) safeSetTarget(gainC.gain, 0.36 - 0.08 * rpmNorm, now, 0.05);
+    if (gainD) safeSetTarget(gainD.gain, 0.08 + 0.10 * rpmNorm, now, 0.05);
 
-    safeSetTarget(oscC.gain, pos(0.15 + 0.10 * (1 - rpmNorm) + 0.05 * load, 0.05), now, 0.045);
-    safeSetTarget(oscD.gain, pos(0.08 + 0.24 * rpmNorm + 0.22 * load, 0.04), now, 0.045);
+    safeSetTarget(engineFilter.frequency, pos(260 + 540 * rpmNorm + 160 * load, 80), now, 0.065);
+    safeSetTarget(engineFilter.Q, pos(0.85 + 0.25 * load, 0.4), now, 0.08);
+    safeSetTarget(engineGain.gain, pos(0.75 + 0.12 * rpmNorm + 0.08 * load, 0.15), now, 0.055);
 
     if (growlSrc && growlFilter && growlGain) {
-      const growlFreq = pos(500 + 1400 * rpmNorm + 600 * load, 120);
-      const targetGrowl = muted ? 0 : pos(0.04 + 0.26 * load + 0.10 * rpmNorm * (1 - load), 0.02);
-      safeSetTarget(growlFilter.frequency, growlFreq, now, 0.045);
-      safeSetTarget(growlFilter.Q, pos(2.0 + 0.8 * load, 0.5), now, 0.07);
-      safeSetTarget(growlGain.gain, targetGrowl, now, 0.04);
+      const growlFreq = pos(340 + 480 * rpmNorm + 220 * load, 100);
+      const targetGrowl = muted ? 0 : Math.min(0.06, pos(0.012 + 0.03 * load + 0.018 * rpmNorm, 0.005));
+      safeSetTarget(growlFilter.frequency, growlFreq, now, 0.065);
+      safeSetTarget(growlFilter.Q, pos(1.1 + 0.4 * load, 0.5), now, 0.08);
+      safeSetTarget(growlGain.gain, targetGrowl, now, 0.055);
     }
 
     // Master gain
-    const targetMaster = muted ? 0 : drifting ? 0.078 : 0.055;
-    safeSetTarget(master.gain, targetMaster, now, 0.045);
+    const targetMaster = muted ? 0 : drifting ? 0.056 : 0.045;
+    safeSetTarget(master.gain, targetMaster, now, 0.055);
 
-    // Slip-proportional tire screech (unchanged)
+    // Slip-proportional tire screech (softened bandpass to avoid harsh whistling)
     if (screechGain && screechFilter) {
       let slipNorm = 0;
       if (typeof drifting === "number") {
@@ -574,10 +604,10 @@ export function createAudio() {
         slipNorm = typeof boostOrSlip === "number" && !isBoosting ? clamp(Math.abs(boostOrSlip), 0.25, 1, 0.72) : 0.72;
       }
       const speedScale = clamp(spd / 45, 0, 1, 0);
-      const targetScreech = muted ? 0 : slipNorm * speedScale * 0.46;
-      const centerFreq = pos(1050 + slipNorm * 780, 200);
-      safeSetTarget(screechFilter.frequency, centerFreq, now, 0.028);
-      safeSetTarget(screechGain.gain, targetScreech, now, 0.028);
+      const targetScreech = muted ? 0 : slipNorm * speedScale * 0.16;
+      const centerFreq = pos(860 + slipNorm * 380, 200);
+      safeSetTarget(screechFilter.frequency, centerFreq, now, 0.04);
+      safeSetTarget(screechGain.gain, targetScreech, now, 0.04);
     }
   }
 
@@ -603,7 +633,7 @@ export function createAudio() {
     stopNode(screechSrc);
     stopNode(growlSrc);
 
-    for (const node of [engineFilter, engineGain, screechFilter, screechGain, growlFilter, growlGain, master]) {
+    for (const node of [gainA, gainB, gainC, gainD, engineFilter, engineGain, screechFilter, screechGain, growlFilter, growlGain, master]) {
       if (node && typeof node.disconnect === "function") {
         try {
           node.disconnect();
@@ -626,6 +656,10 @@ export function createAudio() {
     oscB = null;
     oscC = null;
     oscD = null;
+    gainA = null;
+    gainB = null;
+    gainC = null;
+    gainD = null;
     screechSrc = null;
     screechFilter = null;
     screechGain = null;
