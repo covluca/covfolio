@@ -99,7 +99,7 @@ data class JellyDriftSnapshot(
     val timeRemainingSec: Double = 0.0,
     val continuesUsed: Int = 0,
     val position: Int = 1,
-    val aiCount: Int = 4,
+    val aiCount: Int = 1,
     val countdown: Double = 0.0,
     val playerWorldPos: PlayerWorldPosDto = PlayerWorldPosDto(),
     val jellySpring: JellySpringDto = JellySpringDto(),
@@ -199,7 +199,7 @@ fun parseSnapshot(raw: dynamic): JellyDriftSnapshot {
         timeRemainingSec = asDoubleOr(raw.timeRemainingSec, 0.0),
         continuesUsed = asIntOr(raw.continuesUsed, 0),
         position = asIntOr(raw.position, 1),
-        aiCount = asIntOr(raw.aiCount, 4),
+        aiCount = asIntOr(raw.aiCount, 1),
         countdown = asDoubleOr(raw.countdown, 0.0),
         playerWorldPos = if (pos != null && pos != undefined) {
             PlayerWorldPosDto(

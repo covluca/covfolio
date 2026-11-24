@@ -8,7 +8,7 @@ import {
   resolveCarCollisions
 } from "./physics.js";
 
-export const AI_COUNT = 4;
+export const AI_COUNT = 1;
 
 export const AI_PROFILES = [
   {
@@ -17,7 +17,7 @@ export const AI_PROFILES = [
     carId: "tofu_86",
     colorHex: "#F4F5F7",
     basePace: 0.99,
-    baseLane: -2.2,
+    baseLane: -1.4,
     skill: 0.92,
     aggression: 0.65
   },
@@ -61,8 +61,8 @@ function wrapAngleRad(a) {
 }
 
 function safeSpawnLane(track, rawLane) {
-  const halfW = track && Number.isFinite(track.halfWidth) ? track.halfWidth : 8.2;
-  const maxLane = Math.max(1.4, halfW - 2.3);
+  const halfW = track && Number.isFinite(track.halfWidth) ? track.halfWidth : 3.9;
+  const maxLane = Math.max(0.8, halfW - 1.65);
   return clamp(rawLane, -maxLane, maxLane, 0);
 }
 
@@ -310,7 +310,7 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
   const targetS = (((ai.trackS || 0) + lookDist) % L + L) % L;
   const ahead = track.at(targetS);
 
-  const safeMargin = Math.max(1.5, (ahead.halfWidth || track.halfWidth || 8.2) - 2.1);
+  const safeMargin = Math.max(1.0, (ahead.halfWidth || track.halfWidth || 3.9) - 1.55);
   const targetLane = clamp(ai.baseLane + ai.dynamicLaneOffset, -safeMargin, safeMargin, 0);
   // lateralOffset > 0 is car-right (-binormal)
   const tx = ahead.x - ahead.bx * targetLane;
@@ -321,20 +321,22 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
   const desiredYaw = Math.atan2(dx, dz);
   const headingErr = wrapAngleRad(desiredYaw - ai.yaw);
 
-  // Upcoming curvature lookahead across tight switchback distance
-  const p1 = track.at((((ai.trackS || 0) + 6) % L + L) % L);
-  const p2 = track.at((((ai.trackS || 0) + 18) % L + L) % L);
-  const p3 = track.at((((ai.trackS || 0) + 32) % L + L) % L);
+  // Upcoming curvature lookahead calibrated for realistic ~10 m/s^2 braking distances
+  const p1 = track.at((((ai.trackS || 0) + 10) % L + L) % L);
+  const p2 = track.at((((ai.trackS || 0) + 26) % L + L) % L);
+  const p3 = track.at((((ai.trackS || 0) + 46) % L + L) % L);
+  const p4 = track.at((((ai.trackS || 0) + 64) % L + L) % L);
   const c1 = Math.abs(wrapAngleRad(p2.angle - p1.angle));
   const c2 = Math.abs(wrapAngleRad(p3.angle - p1.angle));
-  const cornerAngle = Math.max(c1, c2 * 0.78);
+  const c3 = Math.abs(wrapAngleRad(p4.angle - p2.angle));
+  const cornerAngle = Math.max(c1, c2 * 0.85, (ai.speed || 0) > 22 ? c3 * 0.72 : 0);
 
   // Fair rubber-banded pacing within [0.92x, 1.08x]
   const aiProg = computeRacerProgress(ai, track);
   const progressGap = player ? clamp((playerProg - aiProg) / 140, -1, 1, 0) : 0;
   const paceFactor = clamp((ai.basePace || 1.0) + progressGap * 0.08, 0.92, 1.08, 1.0);
 
-  const cornerSpeedScale = clamp(1 - cornerAngle * 0.52, 0.45, 1.0, 1.0);
+  const cornerSpeedScale = clamp(1 - cornerAngle * 0.56, 0.42, 1.0, 1.0);
   const targetSpeed = (ai.def?.maxSpeed || 32.9) * paceFactor * cornerSpeedScale;
 
   let input;
@@ -354,8 +356,8 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
     const steer = clamp(headingErr * 2.1, -1, 1, 0);
     const curSpeed = ai.speed || 0;
     const throttle = curSpeed < targetSpeed;
-    const brake = curSpeed > targetSpeed + 4.5 && cornerAngle > 0.30;
-    const wantDrift = cornerAngle > 0.30 && curSpeed > 14.0 && Math.abs(headingErr) > 0.14;
+    const brake = curSpeed > targetSpeed + 2.0 && cornerAngle > 0.24;
+    const wantDrift = cornerAngle > 0.32 && curSpeed > 14.0 && Math.abs(headingErr) > 0.14;
     const wantBoost = false;
 
     input = {

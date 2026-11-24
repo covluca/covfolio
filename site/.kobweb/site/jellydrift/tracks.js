@@ -248,7 +248,7 @@ const TRACK_SPECS = [
     id: "sunny_coast",
     name: "Sunny Coast",
     subtitle: "Cliffside Switchback Touge",
-    halfWidth: 8.6,
+    halfWidth: 4.0,
     gateCount: 12,
     maxBankRad: (4.5 * Math.PI) / 180,
     skyHex: "#79CBE8",
@@ -291,7 +291,7 @@ const TRACK_SPECS = [
     id: "canyon_loop",
     name: "Canyon Loop",
     subtitle: "Red-Rock Mountain Pass",
-    halfWidth: 8.2,
+    halfWidth: 3.7,
     gateCount: 14,
     maxBankRad: (5.5 * Math.PI) / 180,
     skyHex: "#E8925C",
@@ -335,7 +335,7 @@ const TRACK_SPECS = [
     id: "neon_circuit",
     name: "Neon Circuit",
     subtitle: "Midnight Expressway Touge",
-    halfWidth: 8.4,
+    halfWidth: 4.1,
     gateCount: 14,
     maxBankRad: (5.0 * Math.PI) / 180,
     skyHex: "#06080B",
@@ -558,7 +558,7 @@ function buildBakedTrack(spec) {
       bz: g.bz,
       angle: g.angle,
       halfWidth: g.halfWidth,
-      radius: Math.max(g.halfWidth + 7.5, 16.5),
+      radius: Math.max(g.halfWidth + 5.0, 10.0),
       isStartFinish: k === spec.gateCount - 1
     });
   }
@@ -598,11 +598,11 @@ function buildBakedTrack(spec) {
     }
     const sObj = samples[idx];
     const side = i % 2 === 0 ? 1 : -1;
-    const offsetDist = sObj.halfWidth + 7.0;
+    const offsetDist = sObj.halfWidth + 4.8;
     // binormal points left (+1); right is -binormal
     const bx = sObj.x + sObj.bx * side * offsetDist;
     const bz = sObj.z + sObj.bz * side * offsetDist;
-    const by = sObj.y + 4.2;
+    const by = sObj.y + 3.4;
     const preset = SPONSOR_PRESETS[i % SPONSOR_PRESETS.length];
     billboards.push({
       index: i,
@@ -615,8 +615,8 @@ function buildBakedTrack(spec) {
       roadY: sObj.y,
       roadZ: sObj.z,
       angle: sObj.angle + (side > 0 ? -0.35 : 0.35) + Math.PI,
-      width: 8.6,
-      height: 3.8,
+      width: 6.4,
+      height: 2.8,
       text: `${preset.title} — ${preset.subtitle}`,
       preset
     });
@@ -958,7 +958,7 @@ export function buildTrackMeshes(track) {
   roadMesh.name = "road-surface";
   group.add(roadMesh);
 
-  // 3. Curbs (offset outward [halfWidth, halfWidth + 1.15] & stepped +0.04m along normal)
+  // 3. Curbs (offset outward [halfWidth, halfWidth + 0.55] & stepped +0.04m along normal)
   const curbTex = trackTex(createCurbTexture(theme.curbA, theme.curbB));
   if (curbTex) {
     curbTex.repeat.set(1, Math.round(track.length / 12));
@@ -977,9 +977,9 @@ export function buildTrackMeshes(track) {
     buildRibbonGeometry(
       samples,
       (s) => ({
-        x: s.x + s.bx * (s.halfWidth + 1.15) + s.nx * 0.04,
-        y: s.y + s.by * (s.halfWidth + 1.15) + s.ny * 0.04,
-        z: s.z + s.bz * (s.halfWidth + 1.15) + s.nz * 0.04
+        x: s.x + s.bx * (s.halfWidth + 0.55) + s.nx * 0.04,
+        y: s.y + s.by * (s.halfWidth + 0.55) + s.ny * 0.04,
+        z: s.z + s.bz * (s.halfWidth + 0.55) + s.nz * 0.04
       }),
       (s) => ({
         x: s.x + s.bx * s.halfWidth + s.nx * 0.04,
@@ -1001,16 +1001,16 @@ export function buildTrackMeshes(track) {
         z: s.z - s.bz * s.halfWidth + s.nz * 0.04
       }),
       (s) => ({
-        x: s.x - s.bx * (s.halfWidth + 1.15) + s.nx * 0.04,
-        y: s.y - s.by * (s.halfWidth + 1.15) + s.ny * 0.04,
-        z: s.z - s.bz * (s.halfWidth + 1.15) + s.nz * 0.04
+        x: s.x - s.bx * (s.halfWidth + 0.55) + s.nx * 0.04,
+        y: s.y - s.by * (s.halfWidth + 0.55) + s.ny * 0.04,
+        z: s.z - s.bz * (s.halfWidth + 0.55) + s.nz * 0.04
       }),
       1 / SAMPLE_COUNT
     )
   );
   group.add(new THREE.Mesh(rightCurbGeo, curbMat));
 
-  // 4. Guardrails / Barriers (at ±(halfWidth + 1.30), height +0.85m)
+  // 4. Guardrails / Barriers (at ±(halfWidth + 0.62), height +0.78m)
   const railMat = trackMat(
     new THREE.MeshStandardMaterial({
       color: theme.railColor,
@@ -1023,14 +1023,14 @@ export function buildTrackMeshes(track) {
   );
 
   for (const side of [1, -1]) {
-    const railOffset = side * (track.halfWidth + 1.32);
+    const railOffset = side * (track.halfWidth + 0.62);
     const railGeo = trackGeom(
       buildRibbonGeometry(
         samples,
         (s) => ({
-          x: s.x + s.bx * railOffset + s.nx * 0.85,
-          y: s.y + s.by * railOffset + s.ny * 0.85,
-          z: s.z + s.bz * railOffset + s.nz * 0.85
+          x: s.x + s.bx * railOffset + s.nx * 0.78,
+          y: s.y + s.by * railOffset + s.ny * 0.78,
+          z: s.z + s.bz * railOffset + s.nz * 0.78
         }),
         (s) => ({
           x: s.x + s.bx * railOffset - s.nx * 0.15,
@@ -1048,7 +1048,7 @@ export function buildTrackMeshes(track) {
 
   // Guardrail structural posts for clear corner depth perception
   const postStep = Math.max(8, Math.round(SAMPLE_COUNT / 48));
-  const railPostGeo = trackGeom(new THREE.BoxGeometry(0.22, 0.95, 0.22));
+  const railPostGeo = trackGeom(new THREE.BoxGeometry(0.16, 0.85, 0.16));
   const railPostMat = trackMat(
     new THREE.MeshStandardMaterial({
       color: track.id === "canyon_loop" ? 0x5c3a21 : track.id === "neon_circuit" ? 0x1e293b : 0x64748b,
@@ -1059,7 +1059,7 @@ export function buildTrackMeshes(track) {
   for (let i = 0; i < SAMPLE_COUNT; i += postStep) {
     const s = samples[i];
     for (const side of [1, -1]) {
-      const postDist = side * (s.halfWidth + 1.46);
+      const postDist = side * (s.halfWidth + 0.72);
       const post = new THREE.Mesh(railPostGeo, railPostMat);
       post.position.set(
         s.x + s.bx * postDist,
@@ -1084,14 +1084,14 @@ export function buildTrackMeshes(track) {
     buildRibbonGeometry(
       samples,
       (s) => ({
-        x: s.x - s.bx * (s.halfWidth + 1.25) - s.nx * 0.72,
-        y: s.y - s.by * (s.halfWidth + 1.25) - s.ny * 0.72,
-        z: s.z - s.bz * (s.halfWidth + 1.25) - s.nz * 0.72
+        x: s.x - s.bx * (s.halfWidth + 0.65) - s.nx * 0.72,
+        y: s.y - s.by * (s.halfWidth + 0.65) - s.ny * 0.72,
+        z: s.z - s.bz * (s.halfWidth + 0.65) - s.nz * 0.72
       }),
       (s) => ({
-        x: s.x + s.bx * (s.halfWidth + 1.25) - s.nx * 0.72,
-        y: s.y + s.by * (s.halfWidth + 1.25) - s.ny * 0.72,
-        z: s.z + s.bz * (s.halfWidth + 1.25) - s.nz * 0.72
+        x: s.x + s.bx * (s.halfWidth + 0.65) - s.nx * 0.72,
+        y: s.y + s.by * (s.halfWidth + 0.65) - s.ny * 0.72,
+        z: s.z + s.bz * (s.halfWidth + 0.65) - s.nz * 0.72
       }),
       1 / SAMPLE_COUNT
     )
@@ -1102,7 +1102,7 @@ export function buildTrackMeshes(track) {
 
   // Outer deck side skirts (connects outer curb down to bridge underside)
   for (const side of [1, -1]) {
-    const edgeOff = side * (track.halfWidth + 1.22);
+    const edgeOff = side * (track.halfWidth + 0.62);
     const skirtGeo = trackGeom(
       buildRibbonGeometry(
         samples,
@@ -1169,7 +1169,7 @@ export function buildTrackMeshes(track) {
 
   // 6. Start/Finish Line Stripe & Checkpoint Markers
   const startTex = trackTex(createStartCheckerTexture());
-  const startLineGeo = trackGeom(new THREE.PlaneGeometry(track.halfWidth * 1.95, 3.4));
+  const startLineGeo = trackGeom(new THREE.PlaneGeometry(track.halfWidth * 1.95, 2.4));
   startLineGeo.rotateX(-Math.PI / 2);
   const startLineMat = trackMat(
     new THREE.MeshBasicMaterial({
@@ -1202,9 +1202,9 @@ export function buildTrackMeshes(track) {
     const g = track.gates[k];
     if (g.isStartFinish) continue;
     for (const side of [-1, 1]) {
-      const ox = g.x + g.bx * side * (g.halfWidth + 1.52);
-      const oy = g.y + g.by * side * (g.halfWidth + 1.52);
-      const oz = g.z + g.bz * side * (g.halfWidth + 1.52);
+      const ox = g.x + g.bx * side * (g.halfWidth + 0.85);
+      const oy = g.y + g.by * side * (g.halfWidth + 0.85);
+      const oz = g.z + g.bz * side * (g.halfWidth + 0.85);
       const pole = new THREE.Mesh(cpPoleGeo, cpPoleMat);
       pole.position.set(ox, oy + 1.15, oz);
       group.add(pole);
@@ -1229,7 +1229,7 @@ export function buildTrackMeshes(track) {
   gantrySamples[1].sampleIdx = midIdx;
 
   const trussMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x1e2534, metalness: 0.65, roughness: 0.35 }));
-  const postGeo = trackGeom(new THREE.BoxGeometry(0.85, 8.4, 0.85));
+  const postGeo = trackGeom(new THREE.BoxGeometry(0.55, 6.2, 0.55));
 
   for (let gIdx = 0; gIdx < gantrySamples.length; gIdx++) {
     const spec = gantrySamples[gIdx];
@@ -1239,20 +1239,20 @@ export function buildTrackMeshes(track) {
     gantryGroup.position.set(s.x, s.y, s.z);
     gantryGroup.rotation.y = s.angle;
 
-    const span = s.halfWidth * 2 + 3.8;
+    const span = s.halfWidth * 2 + 2.2;
     for (const side of [-1, 1]) {
       const post = new THREE.Mesh(postGeo, trussMat);
-      post.position.set(side * (s.halfWidth + 1.75), 4.0, 0);
+      post.position.set(side * (s.halfWidth + 1.05), 3.0, 0);
       gantryGroup.add(post);
     }
 
-    const beamGeo = trackGeom(new THREE.BoxGeometry(span + 0.6, 0.75, 0.9));
+    const beamGeo = trackGeom(new THREE.BoxGeometry(span + 0.6, 0.55, 0.7));
     const beam = new THREE.Mesh(beamGeo, trussMat);
-    beam.position.set(0, 7.9, 0);
+    beam.position.set(0, 5.9, 0);
     gantryGroup.add(beam);
 
     const bannerW = s.halfWidth * 1.65;
-    const bannerH = 2.55;
+    const bannerH = 1.65;
     const tex = trackTex(
       createSponsorTexture(
         gIdx === 0 ? "JELLY DRIFT" : spec.preset.title,
@@ -1271,7 +1271,7 @@ export function buildTrackMeshes(track) {
     );
     const bannerGeo = trackGeom(new THREE.PlaneGeometry(bannerW, bannerH));
     const bannerMesh = new THREE.Mesh(bannerGeo, bannerMat);
-    bannerMesh.position.set(0, 6.45, 0);
+    bannerMesh.position.set(0, 4.95, 0);
     bannerMesh.rotation.y = Math.PI;
     bannerMesh.name = `gantry-banner-${gIdx}`;
     gantryGroup.add(bannerMesh);
@@ -1394,7 +1394,7 @@ export function buildTrackMeshes(track) {
     const s = samples[i];
     if (Math.abs(s.curvature) < 0.025) continue;
     const outSide = s.curvature > 0 ? -1 : 1;
-    const dist = s.halfWidth + 1.42;
+    const dist = s.halfWidth + 0.72;
     const cx = s.x + s.bx * outSide * dist;
     const cy = s.y + s.by * outSide * dist;
     const cz = s.z + s.bz * outSide * dist;
@@ -1420,9 +1420,9 @@ export function buildTrackMeshes(track) {
     // A) Coastal Rock-Cut Cliff Gallery / Arch Tunnel (samples 462..498)
     const galStart = Math.floor(SAMPLE_COUNT * 0.72);
     const galEnd = Math.floor(SAMPLE_COUNT * 0.78);
-    const cliffWallGeo = trackGeom(new THREE.BoxGeometry(2.4, 7.2, 4.2));
-    const galleryRoofGeo = trackGeom(new THREE.BoxGeometry(track.halfWidth * 2 + 6.4, 1.3, 4.4));
-    const seaColGeo = trackGeom(new THREE.BoxGeometry(1.1, 6.4, 1.1));
+    const cliffWallGeo = trackGeom(new THREE.BoxGeometry(2.0, 6.4, 4.2));
+    const galleryRoofGeo = trackGeom(new THREE.BoxGeometry(track.halfWidth * 2 + 4.0, 1.1, 4.4));
+    const seaColGeo = trackGeom(new THREE.BoxGeometry(0.95, 5.8, 0.95));
     for (let i = galStart; i <= galEnd; i += 2) {
       const s = samples[i % SAMPLE_COUNT];
       const bayCenter = new THREE.Group();
@@ -1431,18 +1431,18 @@ export function buildTrackMeshes(track) {
 
       // Solid carved rock cliff face on outer side (+binormal left / cliff side)
       const rockWall = new THREE.Mesh(cliffWallGeo, rockMat);
-      rockWall.position.set(s.halfWidth + 2.6, 3.4, 0);
+      rockWall.position.set(s.halfWidth + 1.5, 3.0, 0);
       bayCenter.add(rockWall);
 
       // Open seaside gallery concrete arch columns on ocean side
       if ((i - galStart) % 4 === 0) {
         const col = new THREE.Mesh(seaColGeo, cliffConcreteMat);
-        col.position.set(-(s.halfWidth + 2.1), 3.1, 0);
+        col.position.set(-(s.halfWidth + 1.25), 2.8, 0);
         bayCenter.add(col);
       }
 
       const roof = new THREE.Mesh(galleryRoofGeo, rockMat);
-      roof.position.set(0.3, 6.8, 0);
+      roof.position.set(0.15, 5.9, 0);
       bayCenter.add(roof);
       group.add(bayCenter);
     }
@@ -1683,9 +1683,9 @@ export function buildTrackMeshes(track) {
     // A) Illuminated Expressway Tunnel (samples 464..502)
     const tunStart = Math.floor(SAMPLE_COUNT * 0.725);
     const tunEnd = Math.floor(SAMPLE_COUNT * 0.785);
-    const tunWallGeo = trackGeom(new THREE.BoxGeometry(0.95, 6.4, 3.8));
-    const tunRoofGeo = trackGeom(new THREE.BoxGeometry(track.halfWidth * 2 + 5.6, 0.85, 3.9));
-    const tunStripGeo = trackGeom(new THREE.BoxGeometry(1.1, 0.22, 3.5));
+    const tunWallGeo = trackGeom(new THREE.BoxGeometry(0.85, 5.6, 3.8));
+    const tunRoofGeo = trackGeom(new THREE.BoxGeometry(track.halfWidth * 2 + 3.6, 0.75, 3.9));
+    const tunStripGeo = trackGeom(new THREE.BoxGeometry(0.95, 0.18, 3.5));
     for (let i = tunStart; i <= tunEnd; i += 2) {
       const s = samples[i % SAMPLE_COUNT];
       const seg = new THREE.Group();
@@ -1693,21 +1693,21 @@ export function buildTrackMeshes(track) {
       seg.rotation.y = s.angle;
       for (const side of [-1, 1]) {
         const wall = new THREE.Mesh(tunWallGeo, concreteMat);
-        wall.position.set(side * (s.halfWidth + 2.2), 3.1, 0);
+        wall.position.set(side * (s.halfWidth + 1.3), 2.8, 0);
         seg.add(wall);
       }
       const roof = new THREE.Mesh(tunRoofGeo, concreteMat);
-      roof.position.set(0, 6.2, 0);
+      roof.position.set(0, 5.5, 0);
       seg.add(roof);
       const light = new THREE.Mesh(tunStripGeo, i % 4 === 0 ? stripCyanMat : stripAmberMat);
-      light.position.set(0, 5.7, 0);
+      light.position.set(0, 5.05, 0);
       seg.add(light);
       group.add(seg);
     }
 
     // B) Green Expressway Overhead Destination Route Signs (independent of sponsor gantryAnchors)
-    const hwyPostGeo = trackGeom(new THREE.CylinderGeometry(0.28, 0.34, 7.6, 8));
-    const hwyBeamGeo = trackGeom(new THREE.BoxGeometry(track.halfWidth * 2 + 4.4, 0.45, 0.45));
+    const hwyPostGeo = trackGeom(new THREE.CylinderGeometry(0.22, 0.28, 6.2, 8));
+    const hwyBeamGeo = trackGeom(new THREE.BoxGeometry(track.halfWidth * 2 + 2.6, 0.38, 0.38));
     const hwySignSpec = [
       { idx: Math.floor(SAMPLE_COUNT * 0.21), top: "BAYSHORE VIADUCT ->", sub: "C1 EXPRESSWAY TOUGE", accent: "#00e5ff" },
       { idx: Math.floor(SAMPLE_COUNT * 0.62), top: "SHIBUYA TUNNEL 200m", sub: "NIGHT DRIFT SECTOR", accent: "#f3db5b" }
@@ -1719,18 +1719,18 @@ export function buildTrackMeshes(track) {
       g.rotation.y = s.angle;
       for (const side of [-1, 1]) {
         const post = new THREE.Mesh(hwyPostGeo, concreteMat);
-        post.position.set(side * (s.halfWidth + 1.85), 3.8, 0);
+        post.position.set(side * (s.halfWidth + 1.1), 3.1, 0);
         g.add(post);
       }
       const beam = new THREE.Mesh(hwyBeamGeo, concreteMat);
-      beam.position.set(0, 7.2, 0);
+      beam.position.set(0, 5.9, 0);
       g.add(beam);
       const signTex = trackTex(createHighwaySignTexture(hs.top, hs.sub, hs.accent));
       const signFace = new THREE.Mesh(
-        trackGeom(new THREE.PlaneGeometry(s.halfWidth * 1.45, 2.1)),
+        trackGeom(new THREE.PlaneGeometry(s.halfWidth * 1.45, 1.6)),
         trackMat(new THREE.MeshBasicMaterial({ color: 0xffffff, map: signTex, side: THREE.DoubleSide }))
       );
-      signFace.position.set(0, 6.25, 0);
+      signFace.position.set(0, 5.05, 0);
       signFace.rotation.y = Math.PI;
       g.add(signFace);
       group.add(g);
@@ -1786,9 +1786,9 @@ export function buildTrackMeshes(track) {
       const side = i % 48 === 6 ? 1 : -1;
       const lamp = new THREE.Group();
       lamp.position.set(
-        s.x + s.bx * side * (s.halfWidth + 1.55),
+        s.x + s.bx * side * (s.halfWidth + 0.90),
         s.y,
-        s.z + s.bz * side * (s.halfWidth + 1.55)
+        s.z + s.bz * side * (s.halfWidth + 0.90)
       );
       lamp.rotation.y = s.angle;
       const mast = new THREE.Mesh(lampMastGeo, concreteMat);

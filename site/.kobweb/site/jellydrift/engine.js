@@ -737,10 +737,10 @@ export function createJellyDriftEngine(config) {
     if (state.phase === "GARAGE" || state.phase === "FINISHED") {
       garageAngle += dt * (state.phase === "GARAGE" ? 0.24 : 0.35);
       const car = world.playerRoot.position;
-      const radius = state.phase === "GARAGE" ? 6.6 : 7.8;
+      const radius = state.phase === "GARAGE" ? 5.2 : 6.0;
       camera.position.set(
         car.x + Math.sin(garageAngle) * radius,
-        car.y + 2.65 + Math.sin(garageAngle * 0.8) * 0.45,
+        car.y + 1.95 + Math.sin(garageAngle * 0.8) * 0.35,
         car.z + Math.cos(garageAngle) * radius
       );
       camera.lookAt(car.x, car.y + 0.9, car.z);

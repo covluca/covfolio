@@ -94,16 +94,16 @@ export function createCameraRig(THREE, aspect) {
       const ofx = Math.sin(orbit);
       const ofz = Math.cos(orbit);
 
-      const dist = 8.4 + speedFactor * 0.75;
+      const dist = 5.4 + speedFactor * 0.55;
       if (!initialized || dt <= 0) {
         smoothPy = py;
       } else {
         smoothPy += (py - smoothPy) * (1 - Math.exp(-dt * 5.5));
       }
-      const height = smoothPy + 3.55;
+      const height = smoothPy + 2.15;
 
       desired.set(px - ofx * dist, height, pz - ofz * dist);
-      look.set(px + fx * 4.8, smoothPy + 1.25, pz + fz * 4.8);
+      look.set(px + fx * 5.2, smoothPy + 1.15, pz + fz * 5.2);
 
       if (!initialized || dt <= 0) {
         camera.position.copy(desired);
@@ -112,7 +112,7 @@ export function createCameraRig(THREE, aspect) {
         camera.position.copy(desired);
       }
 
-      const targetFov = 64 + speedFactor * 6;
+      const targetFov = 58 + speedFactor * 6;
       if (Math.abs(camera.fov - targetFov) > 0.05) {
         camera.fov = targetFov;
         camera.updateProjectionMatrix();

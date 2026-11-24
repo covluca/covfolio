@@ -292,7 +292,7 @@ export function applyTrackBoundary(state, track, dt = FIXED_DT) {
   state.surfaceNormal = { x: proj.normal.x, y: proj.normal.y, z: proj.normal.z };
 
   // Barrier containment & smooth guardrail glancing
-  const limit = Math.max(2.0, proj.halfWidth - CAR_RADIUS);
+  const limit = Math.max(1.2, proj.halfWidth - CAR_RADIUS + 0.15);
   if (Math.abs(proj.lateralOffset) > limit) {
     const sign = proj.lateralOffset > 0 ? 1 : -1;
     const clampedLat = limit - 0.04;
@@ -412,26 +412,27 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
     const maxFwd = Math.min(def.maxSpeed || def.topSpeed || 44, MAX_TOP_SPEED_MS);
     const maxRev = -(def.reverseSpeed || 13);
 
-    // Longitudinal forces with progressive touge torque curve (~2.2s 0-100 km/h)
+    // Longitudinal forces with realistic touge torque & ~1.0-1.2G braking (~47-58m from 120 km/h)
     if (throttle) {
       const speedFrac = clamp(Math.max(0, vForward) / Math.max(1, maxFwd), 0, 1, 0);
       const driftDriveBonus = (state.driftState || 0) > 0.25 && Math.abs(state.slip || 0) > 0.2 ? 1.12 : 1.0;
-      const accelForce = (def.accel || 34) * (0.50 - 0.14 * speedFrac) * driftDriveBonus;
+      const accelForce = (def.accel || 34) * (0.28 - 0.08 * speedFrac) * driftDriveBonus;
       vForward += accelForce * h;
       state.brakedFromForward = false;
       state.brakeStopHoldSec = 0;
     }
 
-    if (wantDrift && vForward > 0.2) {
-      // Spacebar = mechanical rear handbrake: scrubs forward speed without ever reversing
-      const handbrakeDecel = throttle ? 3.2 : 10.5;
+    if (wantDrift && !brake && vForward > 0.2) {
+      // Spacebar = mechanical rear handbrake (~30-40% of full service brake force, never reverses)
+      const handbrakeDecel = throttle ? 1.8 : 4.2;
       const nextFwd = Math.max(0, vForward - handbrakeDecel * h);
       vForward = nextFwd < 0.06 && !throttle ? 0 : nextFwd;
     }
 
     if (brake) {
       if (vForward > 0.45) {
-        vForward = Math.max(0, vForward - (def.brake || 44) * h);
+        const brakeDecel = clamp(def.brake || 10.5, 7.5, 13.5, 10.5);
+        vForward = Math.max(0, vForward - brakeDecel * h);
         state.brakedFromForward = true;
         state.brakeStopHoldSec = 0;
       } else if (state.brakedFromForward && !(input && input.forceReverse)) {
@@ -442,7 +443,7 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
           state.brakedFromForward = false;
         }
       } else {
-        vForward -= (def.accel || 34) * 0.42 * h;
+        vForward -= (def.accel || 34) * 0.20 * h;
       }
     } else if (!throttle) {
       state.brakedFromForward = false;
@@ -782,7 +783,7 @@ export function resolveCarCollisions(cars, opts = {}) {
         if (track) {
           for (const car of [a, b]) {
             const proj = track.projectToTrack(car.pos.x, car.pos.z, car.trackSampleIdx, car.pos.y);
-            const limit = Math.max(2.0, proj.halfWidth - CAR_RADIUS);
+            const limit = Math.max(1.2, proj.halfWidth - CAR_RADIUS + 0.15);
             if (Math.abs(proj.lateralOffset) > limit) {
               const sign = proj.lateralOffset > 0 ? 1 : -1;
               const clampedLat = limit - 0.04;
