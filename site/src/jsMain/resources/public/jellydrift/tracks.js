@@ -5,7 +5,7 @@ export function clamp(value, min, max, fallback = min) {
   return value < min ? min : value > max ? max : value;
 }
 
-const SAMPLE_COUNT = 640;
+const SAMPLE_COUNT = 1280;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 function wrapAngleRad(a) {
@@ -246,6 +246,29 @@ function createHighwaySignTexture(topText, subText, accentHex) {
   );
 }
 
+function createBrakeBoardTexture(label) {
+  return makeCanvasTexture(
+    128,
+    128,
+    (ctx, w, h) => {
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = "#111827";
+      ctx.lineWidth = 10;
+      ctx.strokeRect(6, 6, w - 12, h - 12);
+      ctx.fillStyle = "#e63946";
+      ctx.fillRect(10, 10, w - 20, 22);
+      ctx.fillStyle = "#111827";
+      ctx.font = "900 46px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, w * 0.5, h * 0.62);
+    },
+    1,
+    1
+  );
+}
+
 const SPONSOR_PRESETS = [
   { title: "COVFOLIO", subtitle: "WEBGL ENGINEERING STUDIO", bg1: "#121826", bg2: "#1d2b44", accent: "#3C83EF" },
   { title: "JELLY TURBO", subtitle: "NITRO CHARGED BOUNCE TECH", bg1: "#2a121b", bg2: "#5e1726", accent: "#F3DB5B" },
@@ -259,19 +282,19 @@ const TRACK_SPECS = [
   {
     id: "sunny_coast",
     name: "Sunny Coast",
-    subtitle: "Cliffside Switchback Touge",
-    halfWidth: 4.0,
-    gateCount: 12,
-    maxBankRad: (4.5 * Math.PI) / 180,
+    subtitle: "Coastal GP Circuit",
+    halfWidth: 4.5,
+    gateCount: 20,
+    maxBankRad: (5.0 * Math.PI) / 180,
     skyHex: "#79CBE8",
     fogColor: 0x8ad4ec,
-    fogNear: 240,
-    fogFar: 1200,
-    groundY: -0.6,
+    fogNear: 280,
+    fogFar: 1450,
+    groundY: 0.0,
     waterY: -0.9,
     theme: {
       roadHex: "#2a313e",
-      edgeStripeHex: "rgba(255, 255, 255, 0.76)",
+      edgeStripeHex: "rgba(255, 255, 255, 0.78)",
       centerLineHex: "#F3DB5B",
       curbA: "#E63946",
       curbB: "#F8FAFC",
@@ -281,36 +304,41 @@ const TRACK_SPECS = [
       waterColor: 0x1fb6d4,
       accentColor: 0x3c83ef
     },
-    // Technical cliffside mountain-coastal touge (~873m perimeter, linked switchbacks & hairpins)
+    // Proper ~1950m coastal GP circuit: long pit straight, heavy Turn 1 hairpin, fast esses, stadium hairpin & Parabolica
     controlPoints: [
-      [0, 0.5, 0],
-      [0, 0.5, 28],
-      [-28, 1.2, 72],
-      [-94, 3.2, 86],
-      [-148, 6.4, 48],
-      [-150, 9.0, -14],
-      [-98, 10.8, -36],
-      [-74, 11.4, -82],
-      [-130, 10.2, -134],
-      [-168, 7.2, -172],
-      [-130, 4.4, -214],
-      [-64, 2.4, -184],
-      [4, 1.0, -112],
-      [0, 0.5, -34]
+      [0, 0.35, -75],
+      [0, 0.35, 0],
+      [0, 0.4, 165],
+      [-28, 0.6, 260],
+      [-110, 0.9, 285],
+      [-172, 1.2, 225],
+      [-145, 1.4, 135],
+      [-215, 1.8, 65],
+      [-295, 2.0, 105],
+      [-360, 2.1, 45],
+      [-365, 1.9, -60],
+      [-285, 1.6, -125],
+      [-215, 1.3, -100],
+      [-185, 1.1, -185],
+      [-275, 1.0, -255],
+      [-220, 0.7, -330],
+      [-90, 0.5, -330],
+      [-10, 0.4, -230],
+      [0, 0.35, -145]
     ]
   },
   {
     id: "canyon_loop",
     name: "Canyon Loop",
-    subtitle: "Red-Rock Mountain Pass",
-    halfWidth: 3.7,
-    gateCount: 14,
+    subtitle: "Red-Rock GP Circuit",
+    halfWidth: 4.5,
+    gateCount: 20,
     maxBankRad: (5.5 * Math.PI) / 180,
     skyHex: "#E8925C",
     fogColor: 0xe8925c,
-    fogNear: 220,
-    fogFar: 1150,
-    groundY: -0.6,
+    fogNear: 260,
+    fogFar: 1450,
+    groundY: -0.2,
     waterY: null,
     theme: {
       roadHex: "#342d32",
@@ -324,36 +352,40 @@ const TRACK_SPECS = [
       waterColor: null,
       accentColor: 0xf3db5b
     },
-    // Steep switchback canyon pass climb & corkscrew descent (~972m perimeter)
+    // Grounded ~2050m flowing desert GP circuit with corkscrew S-plunge, canyon bowl & double-hairpin switchback
     controlPoints: [
-      [0, 0.8, 0],
-      [0, 1.0, 28],
-      [36, 3.4, 74],
-      [108, 7.2, 84],
-      [154, 11.2, 34],
-      [112, 14.4, -12],
-      [48, 16.8, -42],
-      [46, 19.2, -98],
-      [104, 20.0, -146],
-      [168, 16.4, -152],
-      [172, 12.4, -206],
-      [108, 8.8, -220],
-      [46, 5.2, -166],
-      [-12, 2.4, -112],
-      [0, 0.8, -36]
+      [0, 0.6, -85],
+      [0, 0.6, 0],
+      [0, 0.8, 150],
+      [68, 2.2, 235],
+      [172, 3.8, 245],
+      [258, 5.2, 178],
+      [224, 5.6, 86],
+      [148, 4.4, 42],
+      [158, 3.0, -38],
+      [252, 2.4, -78],
+      [335, 2.0, -24],
+      [372, 2.8, -112],
+      [310, 3.6, -200],
+      [215, 3.2, -188],
+      [175, 2.5, -262],
+      [245, 2.0, -335],
+      [155, 1.4, -368],
+      [52, 0.9, -300],
+      [-12, 0.65, -200]
     ]
   },
   {
     id: "neon_circuit",
     name: "Neon Circuit",
-    subtitle: "Midnight Expressway Touge",
+    subtitle: "Midnight Expressway",
     halfWidth: 4.1,
-    gateCount: 14,
+    gateCount: 22,
     maxBankRad: (5.0 * Math.PI) / 180,
     skyHex: "#06080B",
     fogColor: 0x080b14,
-    fogNear: 220,
-    fogFar: 1150,
+    fogNear: 240,
+    fogFar: 1350,
     groundY: -0.5,
     waterY: null,
     theme: {
@@ -368,22 +400,80 @@ const TRACK_SPECS = [
       waterColor: null,
       accentColor: 0xf3db5b
     },
-    // Split-level midnight expressway touge with 9.4m overpass viaduct (~985m perimeter)
+    // Long ~2150m winding Wangan/C1 expressway with high-speed esses, tunnel & 9.8m overpass viaduct
     controlPoints: [
+      [0, 0.4, -85],
       [0, 0.4, 0],
-      [0, 0.4, 34],
-      [30, 0.6, 98],
-      [108, 2.6, 124],
-      [174, 6.4, 88],
-      [144, 9.8, 36],
-      [54, 9.8, 36],
-      [-54, 9.8, 36],
-      [-142, 9.2, 24],
-      [-178, 5.2, -38],
-      [-138, 1.4, -104],
-      [-58, 0.6, -102],
-      [-10, 0.4, -68],
-      [0, 0.4, -34]
+      [0, 0.4, 155],
+      [58, 0.8, 250],
+      [150, 2.4, 280],
+      [235, 5.2, 215],
+      [198, 8.4, 125],
+      [268, 9.8, 56],
+      [190, 9.8, 40],
+      [85, 9.8, 40],
+      [-85, 9.8, 40],
+      [-190, 9.2, 30],
+      [-268, 6.4, -48],
+      [-215, 3.6, -128],
+      [-282, 1.8, -215],
+      [-225, 0.9, -300],
+      [-115, 0.6, -280],
+      [-42, 0.5, -238],
+      [-86, 0.5, -165],
+      [-18, 0.4, -128]
+    ]
+  },
+  {
+    id: "akina_forest",
+    name: "Mt. Akina",
+    subtitle: "Forest Mountain Touge",
+    halfWidth: 3.7,
+    gateCount: 22,
+    maxBankRad: (6.0 * Math.PI) / 180,
+    skyHex: "#1c2a3a",
+    fogColor: 0x243447,
+    fogNear: 120,
+    fogFar: 680,
+    groundY: -0.6,
+    waterY: null,
+    theme: {
+      roadHex: "#232933",
+      edgeStripeHex: "rgba(248, 250, 252, 0.84)",
+      centerLineHex: "#F3DB5B",
+      curbA: "#64748b",
+      curbB: "#475569",
+      railColor: 0xe2e8f0,
+      pillarColor: 0x3f4a3c,
+      groundColor: 0x1e3528,
+      waterColor: null,
+      accentColor: 0xf3db5b
+    },
+    // ~2250m forest mountain pass with uphill forest sweepers, 5 consecutive Akina hairpins & downhill S-curves
+    controlPoints: [
+      [0, 0.5, -60],
+      [0, 0.6, 0],
+      [0, 1.0, 95],
+      [-52, 3.2, 170],
+      [-132, 6.4, 180],
+      [-192, 9.6, 118],
+      [-150, 12.4, 48],
+      [-228, 14.8, 12],
+      [-300, 16.6, 46],
+      [-352, 18.4, -6],
+      [-278, 20.0, -56],
+      [-226, 21.6, -106],
+      [-308, 23.0, -148],
+      [-355, 24.0, -210],
+      [-262, 23.8, -260],
+      [-175, 21.4, -234],
+      [-142, 18.0, -310],
+      [-218, 14.5, -372],
+      [-145, 10.2, -422],
+      [-44, 6.2, -375],
+      [26, 3.4, -290],
+      [-28, 1.8, -198],
+      [14, 0.9, -128]
     ]
   }
 ];
@@ -915,8 +1005,9 @@ export function buildTrackMeshes(track) {
     group.add(water);
   }
 
-  const roadSize = track.id === "sunny_coast" ? 480 : 2800;
-  const groundGeo = trackGeom(new THREE.PlaneGeometry(roadSize, roadSize));
+  const groundW = track.id === "sunny_coast" ? 440 : 3200;
+  const groundH = track.id === "sunny_coast" ? 760 : 3200;
+  const groundGeo = trackGeom(new THREE.PlaneGeometry(groundW, groundH));
   groundGeo.rotateX(-Math.PI / 2);
   let groundTex = null;
   if (track.id === "neon_circuit") {
@@ -932,8 +1023,8 @@ export function buildTrackMeshes(track) {
   );
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.position.y = track.groundY;
-  ground.position.x = track.id === "sunny_coast" ? -70 : 0;
-  ground.position.z = track.id === "sunny_coast" ? -65 : -55;
+  ground.position.x = track.id === "sunny_coast" ? -200 : 0;
+  ground.position.z = track.id === "sunny_coast" ? -25 : -85;
   ground.receiveShadow = true;
   ground.name = "ground-plane";
   group.add(ground);
@@ -1065,7 +1156,7 @@ export function buildTrackMeshes(track) {
   }
 
   // Guardrail structural posts for clear corner depth perception
-  const postStep = Math.max(8, Math.round(SAMPLE_COUNT / 48));
+  const postStep = Math.max(12, Math.round(SAMPLE_COUNT / 80));
   const railPostGeo = trackGeom(new THREE.BoxGeometry(0.16, 0.85, 0.16));
   const railPostMat = trackMat(
     new THREE.MeshStandardMaterial({
@@ -1090,8 +1181,9 @@ export function buildTrackMeshes(track) {
   }
 
   // Reflective guardrail cat's-eye studs (zero-overhead single InstancedMesh)
+  const studStep = Math.max(6, Math.round(SAMPLE_COUNT / 128));
   const studIndices = [];
-  for (let i = 0; i < SAMPLE_COUNT; i += 6) {
+  for (let i = 0; i < SAMPLE_COUNT; i += studStep) {
     studIndices.push(i);
   }
   const studCount = studIndices.length * 2;
@@ -1176,13 +1268,15 @@ export function buildTrackMeshes(track) {
     group.add(new THREE.Mesh(skirtGeo, undersideMat));
   }
 
-  // Support pillars under elevated bridge stretches (flush beneath deck underside, never poking through asphalt)
+  // Support pillars under elevated bridge stretches (only on expressway viaduct & high mountain cliff passes)
   const pillarGeo = trackGeom(new THREE.BoxGeometry(1.3, 1, 1.3));
   const capBeamGeo = trackGeom(new THREE.BoxGeometry(1, 0.45, 1.35));
   const pillarAdjSkip = Math.round(SAMPLE_COUNT * 0.085);
-  for (let i = 0; i < SAMPLE_COUNT; i += 18) {
+  const pillarStep = Math.max(18, Math.round(SAMPLE_COUNT / 44));
+  const allowPillars = track.id === "neon_circuit" || track.id === "akina_forest";
+  for (let i = 0; allowPillars && i < SAMPLE_COUNT; i += pillarStep) {
     const s = samples[i];
-    if (s.y < 2.6) continue;
+    if (s.y < (track.id === "akina_forest" ? 6.0 : 3.2)) continue;
     let placedBothSides = true;
     for (const side of [-1, 1]) {
       const px = s.x + s.bx * side * (s.halfWidth * 0.78);
@@ -1443,9 +1537,10 @@ export function buildTrackMeshes(track) {
   );
   const chevronPostGeo = trackGeom(new THREE.CylinderGeometry(0.08, 0.1, 2.2, 6));
   const chevronPostMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 }));
-  for (let i = 16; i < SAMPLE_COUNT - 16; i += 9) {
+  const chevronStep = Math.max(9, Math.round(SAMPLE_COUNT / 88));
+  for (let i = 20; i < SAMPLE_COUNT - 20; i += chevronStep) {
     const s = samples[i];
-    if (Math.abs(s.curvature) < 0.025) continue;
+    if (Math.abs(s.curvature) < 0.022) continue;
     const outSide = s.curvature > 0 ? -1 : 1;
     const dist = s.halfWidth + 0.72;
     const cx = s.x + s.bx * outSide * dist;
@@ -1726,7 +1821,7 @@ export function buildTrackMeshes(track) {
         group.add(cactus);
       }
     }
-  } else {
+  } else if (track.id === "neon_circuit") {
     // neon_circuit: Illuminated Expressway Tunnel, City Skyline & Highway Destination Gantries
     const concreteMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x162033, metalness: 0.55, roughness: 0.45 }));
     const stripCyanMat = trackMat(new THREE.MeshBasicMaterial({ color: 0x00e5ff }));
@@ -1854,6 +1949,174 @@ export function buildTrackMeshes(track) {
       bulb.position.set(-side * 1.85, 5.95, 0);
       lamp.add(bulb);
       group.add(lamp);
+    }
+  } else if (track.id === "akina_forest") {
+    // A) Dense Instanced Japanese Cedar/Pine Forest lining both sides of Mt. Akina pass
+    const pinePlacements = [];
+    const pineStep = Math.max(4, Math.round(SAMPLE_COUNT / 240));
+    for (let i = 0; i < SAMPLE_COUNT; i += pineStep) {
+      const s = samples[i];
+      for (const side of [-1, 1]) {
+        for (let row = 0; row < 2; row++) {
+          const jitter = ((i * 29 + row * 17 + (side > 0 ? 7 : 3)) % 11) * 0.7;
+          const dist = s.halfWidth + 5.8 + row * 7.2 + jitter;
+          const tx = s.x + s.bx * side * dist;
+          const tz = s.z + s.bz * side * dist;
+          if (!isClearOfTrack(tx, tz, s.halfWidth + 3.2)) continue;
+          const sc = 0.85 + ((i * 13 + row * 5) % 9) * 0.12;
+          const baseY = Math.max(track.groundY - 0.5, s.y - 2.2 - row * 1.6);
+          pinePlacements.push({ tx, baseY, tz, sc });
+        }
+      }
+    }
+    if (pinePlacements.length > 0) {
+      const trunkGeo = trackGeom(new THREE.CylinderGeometry(0.22, 0.34, 4.5, 6));
+      const trunkMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x4a3525, roughness: 0.92 }));
+      const canopyGeo = trackGeom(new THREE.ConeGeometry(2.6, 8.6, 7));
+      const canopyMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x1b4332, roughness: 0.86 }));
+
+      const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, pinePlacements.length);
+      const canopyInst = new THREE.InstancedMesh(canopyGeo, canopyMat, pinePlacements.length);
+      trunkInst.name = "akina-forest-trunks";
+      canopyInst.name = "akina-forest-canopies";
+      const dummy = new THREE.Object3D();
+      for (let k = 0; k < pinePlacements.length; k++) {
+        const p = pinePlacements[k];
+        dummy.position.set(p.tx, p.baseY + 2.25 * p.sc, p.tz);
+        dummy.scale.set(p.sc, p.sc, p.sc);
+        dummy.rotation.set(0, (k * 0.7) % (Math.PI * 2), 0);
+        dummy.updateMatrix();
+        trunkInst.setMatrixAt(k, dummy.matrix);
+
+        dummy.position.set(p.tx, p.baseY + 7.2 * p.sc, p.tz);
+        dummy.scale.set(p.sc, p.sc * 1.12, p.sc);
+        dummy.updateMatrix();
+        canopyInst.setMatrixAt(k, dummy.matrix);
+      }
+      trunkInst.instanceMatrix.needsUpdate = true;
+      canopyInst.instanceMatrix.needsUpdate = true;
+      group.add(trunkInst);
+      group.add(canopyInst);
+    }
+
+    // B) Mountain Cliff Retaining Rocks + Orange Hairpin Convex Mirrors + Warm Touge Streetlamps
+    const mtnRockGeo = trackGeom(new THREE.DodecahedronGeometry(3.8, 0));
+    const mtnRockMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x3b4248, roughness: 0.94 }));
+    for (let i = 12; i < SAMPLE_COUNT - 12; i += 18) {
+      const s = samples[i];
+      if (s.y < 3.5) continue;
+      const inSide = s.curvature > 0 ? 1 : -1;
+      const rx = s.x + s.bx * inSide * (s.halfWidth + 5.2);
+      const rz = s.z + s.bz * inSide * (s.halfWidth + 5.2);
+      if (!isClearOfTrack(rx, rz, s.halfWidth + 2.2)) continue;
+      const rock = new THREE.Mesh(mtnRockGeo, mtnRockMat);
+      rock.position.set(rx, s.y + 1.4, rz);
+      rock.scale.set(1.3, 1.5, 1.6);
+      rock.rotation.set(i * 0.3, s.angle, i * 0.2);
+      group.add(rock);
+    }
+
+    const mirrorPostGeo = trackGeom(new THREE.CylinderGeometry(0.06, 0.08, 3.2, 6));
+    const mirrorPostMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.5 }));
+    const mirrorRimGeo = trackGeom(new THREE.CylinderGeometry(0.55, 0.55, 0.08, 16)).rotateX(Math.PI / 2);
+    const mirrorRimMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xea580c, roughness: 0.4 }));
+    const mirrorGlassGeo = trackGeom(new THREE.CircleGeometry(0.46, 16));
+    const mirrorGlassMat = trackMat(new THREE.MeshBasicMaterial({ color: 0xe2e8f0, side: THREE.DoubleSide }));
+    for (let i = 30; i < SAMPLE_COUNT - 30; i += 24) {
+      const s = samples[i];
+      if (Math.abs(s.curvature) < 0.030) continue;
+      const outSide = s.curvature > 0 ? -1 : 1;
+      const mx = s.x + s.bx * outSide * (s.halfWidth + 0.88);
+      const mz = s.z + s.bz * outSide * (s.halfWidth + 0.88);
+      const mg = new THREE.Group();
+      mg.name = "akina-hairpin-mirror";
+      mg.position.set(mx, s.y, mz);
+      mg.rotation.y = s.angle + Math.PI;
+      const mp = new THREE.Mesh(mirrorPostGeo, mirrorPostMat);
+      mp.position.y = 1.6;
+      mg.add(mp);
+      const rim = new THREE.Mesh(mirrorRimGeo, mirrorRimMat);
+      rim.position.y = 3.1;
+      mg.add(rim);
+      const glass = new THREE.Mesh(mirrorGlassGeo, mirrorGlassMat);
+      glass.position.set(0, 3.1, 0.05);
+      mg.add(glass);
+      group.add(mg);
+    }
+
+    const lampMastGeo = trackGeom(new THREE.CylinderGeometry(0.09, 0.12, 5.4, 6));
+    const lampArmGeo = trackGeom(new THREE.BoxGeometry(1.7, 0.12, 0.12));
+    const lampBulbGeo = trackGeom(new THREE.BoxGeometry(0.75, 0.14, 0.36));
+    const lampPoleMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 }));
+    const sodiumMat = trackMat(new THREE.MeshBasicMaterial({ color: 0xfbbf24 }));
+    for (let i = 16; i < SAMPLE_COUNT; i += 44) {
+      const s = samples[i];
+      const side = i % 88 < 44 ? 1 : -1;
+      const lamp = new THREE.Group();
+      lamp.position.set(
+        s.x + s.bx * side * (s.halfWidth + 0.92),
+        s.y,
+        s.z + s.bz * side * (s.halfWidth + 0.92)
+      );
+      lamp.rotation.y = s.angle;
+      const mast = new THREE.Mesh(lampMastGeo, lampPoleMat);
+      mast.position.y = 2.7;
+      lamp.add(mast);
+      const arm = new THREE.Mesh(lampArmGeo, lampPoleMat);
+      arm.position.set(-side * 0.8, 5.3, 0);
+      lamp.add(arm);
+      const bulb = new THREE.Mesh(lampBulbGeo, sodiumMat);
+      bulb.position.set(-side * 1.45, 5.2, 0);
+      lamp.add(bulb);
+      group.add(lamp);
+    }
+  }
+
+  // Braking-zone distance boards & pit grandstand for proper racing circuits
+  if (track.id === "sunny_coast" || track.id === "canyon_loop") {
+    const standGroup = new THREE.Group();
+    standGroup.name = "circuit-grandstand";
+    const s0 = samples[Math.floor(SAMPLE_COUNT * 0.015)];
+    standGroup.position.set(
+      s0.x + s0.bx * (s0.halfWidth + 11.5),
+      s0.y,
+      s0.z + s0.bz * (s0.halfWidth + 11.5)
+    );
+    standGroup.rotation.y = s0.angle;
+    const baseMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.75 }));
+    const roofMat = trackMat(new THREE.MeshStandardMaterial({ color: theme.accentColor, roughness: 0.5 }));
+    for (let tier = 0; tier < 3; tier++) {
+      const row = new THREE.Mesh(trackGeom(new THREE.BoxGeometry(2.6, 1.2, 34)), baseMat);
+      row.position.set(tier * 2.4, 0.8 + tier * 1.1, 0);
+      standGroup.add(row);
+    }
+    const canopy = new THREE.Mesh(trackGeom(new THREE.BoxGeometry(9.2, 0.35, 35)), roofMat);
+    canopy.position.set(2.4, 5.8, 0);
+    standGroup.add(canopy);
+    group.add(standGroup);
+
+    // 100m & 50m braking marker boards ahead of heavy corner zones
+    const b100Mat = trackMat(new THREE.MeshBasicMaterial({ map: trackTex(createBrakeBoardTexture("100")), side: THREE.DoubleSide }));
+    const b50Mat = trackMat(new THREE.MeshBasicMaterial({ map: trackTex(createBrakeBoardTexture("50")), side: THREE.DoubleSide }));
+    const bPostGeo = trackGeom(new THREE.CylinderGeometry(0.06, 0.06, 1.5, 6));
+    const bSignGeo = trackGeom(new THREE.PlaneGeometry(1.15, 1.15));
+    const bZones = [Math.floor(SAMPLE_COUNT * 0.08), Math.floor(SAMPLE_COUNT * 0.52)];
+    for (const zi of bZones) {
+      for (const [offsetSamples, mat] of [[0, b100Mat], [Math.round(SAMPLE_COUNT * 0.025), b50Mat]]) {
+        const s = samples[(zi + offsetSamples) % SAMPLE_COUNT];
+        const bx = s.x + s.bx * (s.halfWidth + 0.95);
+        const bz = s.z + s.bz * (s.halfWidth + 0.95);
+        const bg = new THREE.Group();
+        bg.position.set(bx, s.y, bz);
+        bg.rotation.y = s.angle + Math.PI;
+        const bp = new THREE.Mesh(bPostGeo, baseMat);
+        bp.position.y = 0.75;
+        bg.add(bp);
+        const bs = new THREE.Mesh(bSignGeo, mat);
+        bs.position.y = 1.65;
+        bg.add(bs);
+        group.add(bg);
+      }
     }
   }
 

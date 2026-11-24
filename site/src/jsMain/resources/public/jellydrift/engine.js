@@ -32,7 +32,7 @@ import { createAdProjector } from "./ads3d.js";
 const PUBLISHER_ID = "ca-pub-2255472474228401";
 const DRIFT_RUSH_START = 32.0;
 const CONTINUE_TIME = 20.0;
-const CHECKPOINT_BONUS = 2.4;
+const CHECKPOINT_BONUS = 3.2;
 const COUNTDOWN_START = 1.5;
 
 const RECORDS_STORAGE_KEY = "jellydrift_records_v1";
@@ -67,7 +67,7 @@ function buildMinimapData(track) {
   let maxX = -Infinity;
   let minZ = Infinity;
   let maxZ = -Infinity;
-  const count = 64;
+  const count = 128;
   for (let i = 0; i < count; i++) {
     const p = track.at((i / count) * track.length);
     if (!p) continue;
@@ -180,6 +180,7 @@ export function createJellyDriftEngine(config) {
     ready: false,
     phase: "GARAGE",
     mode: "DRIFT_RUSH",
+    difficulty: "MEDIUM",
     trackId: "sunny_coast",
     carId: "jelly_gt",
     cameraMode: "CHASE",
@@ -309,14 +310,17 @@ export function createJellyDriftEngine(config) {
   function addSkyAndLights(track) {
     const isCanyon = track.id === "canyon_loop";
     const isNeon = track.id === "neon_circuit";
-    const topHex = isNeon ? 0x040714 : isCanyon ? 0x2b2d5c : 0x2c86d4;
-    const horHex = isNeon ? 0x181c3a : isCanyon ? 0xf08c4b : 0xb8e6f7;
-    const botHex = isNeon ? 0x050810 : isCanyon ? 0x8c472b : 0x68b5d8;
-    const sunHex = isNeon ? 0x9ec5ff : isCanyon ? 0xffd07a : 0xfff6d6;
-    const starsVal = isNeon ? 1.0 : isCanyon ? 0.15 : 0.0;
+    const isAkina = track.id === "akina_forest";
+    const topHex = isNeon ? 0x040714 : isAkina ? 0x101c2c : isCanyon ? 0x2b2d5c : 0x2c86d4;
+    const horHex = isNeon ? 0x181c3a : isAkina ? 0x3b5368 : isCanyon ? 0xf08c4b : 0xb8e6f7;
+    const botHex = isNeon ? 0x050810 : isAkina ? 0x13221c : isCanyon ? 0x8c472b : 0x68b5d8;
+    const sunHex = isNeon ? 0x9ec5ff : isAkina ? 0xcbe3ff : isCanyon ? 0xffd07a : 0xfff6d6;
+    const starsVal = isNeon ? 1.0 : isAkina ? 0.55 : isCanyon ? 0.15 : 0.0;
 
     if (isNeon) {
       sunDir.set(-0.35, 0.65, 0.55).normalize();
+    } else if (isAkina) {
+      sunDir.set(-0.42, 0.52, -0.58).normalize();
     } else if (isCanyon) {
       sunDir.set(-0.55, 0.42, -0.45).normalize();
     } else {
@@ -477,7 +481,7 @@ export function createJellyDriftEngine(config) {
     player.lap = 1;
     player.checkpointIndex = 0;
 
-    const isNight = track.id === "neon_circuit";
+    const isNight = track.id === "neon_circuit" || track.id === "akina_forest";
     const playerMesh = createCarMesh(def, { cameraMode: state.cameraMode, nightMode: isNight });
     scene.add(playerMesh.carRoot);
 
@@ -582,6 +586,10 @@ export function createJellyDriftEngine(config) {
     const trackId = typeof opts.trackId === "string" ? opts.trackId : state.trackId;
     const carId = typeof opts.carId === "string" ? opts.carId : state.carId;
     const mode = opts.mode === "GRAND_PRIX" ? "GRAND_PRIX" : "DRIFT_RUSH";
+    if (typeof opts.difficulty === "string") {
+      const up = opts.difficulty.toUpperCase();
+      if (up === "EASY" || up === "MEDIUM" || up === "HARD") state.difficulty = up;
+    }
     state.trackId = getTrack(trackId).id;
     state.carId = getCar(carId).id;
     state.mode = mode;
@@ -679,6 +687,14 @@ export function createJellyDriftEngine(config) {
     if (state.phase !== "GARAGE") return;
     state.mode = mode === "GRAND_PRIX" ? "GRAND_PRIX" : "DRIFT_RUSH";
     state.timeRemainingSec = state.mode === "DRIFT_RUSH" ? DRIFT_RUSH_START : 0;
+    emitSnapshot();
+  }
+
+  function selectDifficulty(diff) {
+    if (state.phase !== "GARAGE" || typeof diff !== "string") return;
+    const up = diff.toUpperCase();
+    if (up !== "EASY" && up !== "MEDIUM" && up !== "HARD") return;
+    state.difficulty = up;
     emitSnapshot();
   }
 
@@ -843,7 +859,7 @@ export function createJellyDriftEngine(config) {
     const prevDriftPts = player.driftScore || 0;
 
     stepCarPhysics(player, input, dt, track);
-    stepAllAI(aiList, dt, track, player);
+    stepAllAI(aiList, dt, track, player, state.difficulty);
 
     state.lapTimeSec += dt;
     const gb = computeGearbox(player.speed || 0);
@@ -1156,6 +1172,7 @@ export function createJellyDriftEngine(config) {
       ready: state.ready,
       phase: forUiCallback ? state.phase : uiPhase,
       mode: state.mode,
+      difficulty: state.difficulty,
       trackId: state.trackId,
       carId: state.carId,
       cameraMode: state.cameraMode,
@@ -1520,6 +1537,7 @@ export function createJellyDriftEngine(config) {
     selectTrack,
     selectCar,
     selectMode,
+    selectDifficulty,
     setMuted,
     setTouchInput,
     confirmUiPhase,

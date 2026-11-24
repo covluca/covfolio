@@ -43,12 +43,20 @@ private val TRACKS = listOf(
     "sunny_coast" to "Sunny Coast",
     "canyon_loop" to "Canyon Loop",
     "neon_circuit" to "Neon Circuit",
+    "akina_forest" to "Mt. Akina",
 )
 
 private val TRACK_SUBTITLES = mapOf(
-    "sunny_coast" to "Cliffside switchback touge",
-    "canyon_loop" to "Red-rock mountain pass",
-    "neon_circuit" to "Midnight expressway touge",
+    "sunny_coast" to "Coastal GP circuit",
+    "canyon_loop" to "Red-rock GP circuit",
+    "neon_circuit" to "Midnight expressway",
+    "akina_forest" to "Forest mountain touge",
+)
+
+private val DIFFICULTIES = listOf(
+    Triple(Difficulty.EASY, "Easy", "Street"),
+    Triple(Difficulty.MEDIUM, "Medium", "Touge"),
+    Triple(Difficulty.HARD, "Hard", "Akina Legend"),
 )
 
 private val CARS = listOf(
@@ -297,7 +305,7 @@ private fun CarStatsPanel(carId: String) {
 @Composable
 private fun ControlsHint() {
     SpanText(
-        "WASD/Arrows · Space Handbrake · C Camera · V Hood · Esc Pause",
+        "WASD/Arrows · Space Drift/Handbrake · C Camera · V Hood · Esc Pause",
         modifier = Modifier
             .fontFamily(Fonts.DM_SANS)
             .fontSize(0.6.cssRem)
@@ -314,7 +322,7 @@ fun GarageMenu(
     Column(
         modifier = Modifier
             .position(Position.Absolute)
-            .top(44.px)
+            .top(30.px)
             .left(0.px)
             .right(0.px)
             .padding(leftRight = 10.px)
@@ -389,12 +397,15 @@ fun GarageMenu(
             }
         }
 
-        Div(Modifier.height(8.px).toAttrs())
-        SectionLabel("MODE")
+        Div(Modifier.height(6.px).toAttrs())
+        SectionLabel("MODE & DIFFICULTY")
         Row(
             modifier = Modifier
                 .gap(8.px)
-                .styleModifier { property("justify-content", "center") },
+                .styleModifier {
+                    property("flex-wrap", "wrap")
+                    property("justify-content", "center")
+                },
             verticalAlignment = Alignment.CenterVertically
         ) {
             for ((mode, label) in MODES) {
@@ -405,22 +416,34 @@ fun GarageMenu(
                     label = label,
                     selected = snapshot.mode == mode,
                     onSelect = { bridge.selectMode(mode) },
-                    widthPx = 136,
+                    widthPx = 112,
+                )
+            }
+            for ((diff, label, sub) in DIFFICULTIES) {
+                SelectCard(
+                    testId = "diff-${diff.name}",
+                    attrName = "data-difficulty-id",
+                    value = diff.name,
+                    label = label,
+                    selected = snapshot.difficulty == diff,
+                    onSelect = { bridge.selectDifficulty(diff) },
+                    widthPx = 94,
+                    subtitle = sub,
                 )
             }
         }
 
-        Div(Modifier.height(8.px).toAttrs())
+        Div(Modifier.height(6.px).toAttrs())
         CarStatsPanel(snapshot.carId)
 
-        Div(Modifier.height(6.px).toAttrs())
+        Div(Modifier.height(5.px).toAttrs())
         ControlsHint()
 
-        Div(Modifier.height(10.px).toAttrs())
+        Div(Modifier.height(8.px).toAttrs())
         GameButton(
             testId = "start-race-btn",
             label = "START RACE",
-            onClick = { bridge.startRace(snapshot.trackId, snapshot.carId, snapshot.mode) },
+            onClick = { bridge.startRace(snapshot.trackId, snapshot.carId, snapshot.mode, snapshot.difficulty) },
             accent = true,
             fontSizeRem = 0.95,
             modifier = Modifier.width(240.px),
@@ -702,7 +725,7 @@ fun PodiumMenu(
         )
         val bestPart = if (snapshot.bestLapSec > 0.0) " · Best ${formatLapTime(snapshot.bestLapSec)}" else ""
         SpanText(
-            "Drift score ${snapshot.driftScore}$bestPart · ${snapshot.totalLaps} laps · ${snapshot.trackId.replace('_', ' ')}",
+            "Drift score ${snapshot.driftScore}$bestPart · ${snapshot.difficulty.name.lowercase().replaceFirstChar { it.uppercase() }} · ${snapshot.totalLaps} laps · ${snapshot.trackId.replace('_', ' ')}",
             modifier = Modifier
                 .fontFamily(Fonts.DM_SANS)
                 .fontSize(0.8.cssRem)

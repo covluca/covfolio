@@ -10,6 +10,48 @@ import {
 
 export const AI_COUNT = 1;
 
+export const DIFFICULTIES = {
+  EASY: {
+    id: "EASY",
+    label: "Easy",
+    subtitle: "Street",
+    paceMult: 1.04,
+    cornerMinScale: 0.64,
+    cornerSlowFactor: 0.30,
+    brakeMargin: 3.8,
+    apexCut: 0.42,
+    driftEntryCurv: 0.42,
+    driftSkill: 0.35,
+    rubberBandRange: 0.05
+  },
+  MEDIUM: {
+    id: "MEDIUM",
+    label: "Medium",
+    subtitle: "Touge",
+    paceMult: 1.09,
+    cornerMinScale: 0.74,
+    cornerSlowFactor: 0.22,
+    brakeMargin: 4.8,
+    apexCut: 0.72,
+    driftEntryCurv: 0.28,
+    driftSkill: 0.75,
+    rubberBandRange: 0.04
+  },
+  HARD: {
+    id: "HARD",
+    label: "Hard",
+    subtitle: "Akina Legend",
+    paceMult: 1.15,
+    cornerMinScale: 0.83,
+    cornerSlowFactor: 0.15,
+    brakeMargin: 5.8,
+    apexCut: 0.94,
+    driftEntryCurv: 0.20,
+    driftSkill: 1.0,
+    rubberBandRange: 0.02
+  }
+};
+
 export const AI_PROFILES = [
   {
     id: "ai_tofu",
@@ -69,7 +111,8 @@ function safeSpawnLane(track, rawLane) {
 const TRACK_RIVAL_CAR = {
   sunny_coast: "jelly_gt",
   canyon_loop: "bumble_buggy",
-  neon_circuit: "tofu_86"
+  neon_circuit: "cobalt_hyper",
+  akina_forest: "tofu_86"
 };
 
 function pickProfile(index = 0, opts = {}) {
@@ -284,6 +327,10 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
     ? context.allCars
     : [];
   const player = context && !Array.isArray(context) ? context.player : null;
+  const diffKey = context && !Array.isArray(context) && typeof context.difficulty === "string"
+    ? context.difficulty.toUpperCase()
+    : "MEDIUM";
+  const cfg = DIFFICULTIES[diffKey] || DIFFICULTIES.MEDIUM;
   const playerProg =
     context && !Array.isArray(context) && Number.isFinite(context.playerProgress)
       ? context.playerProgress
@@ -333,14 +380,32 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
 
   ai.dynamicLaneOffset += (desiredDynOffset - (ai.dynamicLaneOffset || 0)) * (1 - Math.exp(-dtSafe * 3.4));
 
-  // Lookahead point along closed spline tuned for narrow touge hairpins
-  const lookDist = clamp(8.5 + 0.30 * Math.max(0, ai.speed || 0), 8.5, 20, 10);
+  // Upcoming curvature & racing line lookahead calibrated per difficulty
+  const p1 = track.at((((ai.trackS || 0) + 10) % L + L) % L);
+  const p2 = track.at((((ai.trackS || 0) + 26) % L + L) % L);
+  const p3 = track.at((((ai.trackS || 0) + 46) % L + L) % L);
+  const p4 = track.at((((ai.trackS || 0) + 64) % L + L) % L);
+  const signedNear = wrapAngleRad(p2.angle - p1.angle);
+  const signedFar = wrapAngleRad(p4.angle - p2.angle);
+  const c1 = Math.abs(signedNear);
+  const c2 = Math.abs(wrapAngleRad(p3.angle - p1.angle));
+  const c3 = Math.abs(signedFar);
+  const cornerAngle = Math.max(c1, c2 * 0.85, (ai.speed || 0) > 22 ? c3 * 0.72 : 0);
+
+  // Lookahead point along closed spline with outside-inside-outside apex racing line
+  const lookDist = clamp(9.0 + 0.34 * Math.max(0, ai.speed || 0), 9.0, 22, 11);
   const targetS = (((ai.trackS || 0) + lookDist) % L + L) % L;
   const ahead = track.at(targetS);
 
-  const safeMargin = Math.max(1.0, (ahead.halfWidth || track.halfWidth || 3.9) - 1.55);
-  const targetLane = clamp(ai.baseLane + ai.dynamicLaneOffset, -safeMargin, safeMargin, 0);
-  // lateralOffset > 0 is car-right (-binormal)
+  const safeMargin = Math.max(1.0, (ahead.halfWidth || track.halfWidth || 3.9) - 1.50);
+  // lateralOffset > 0 is car-right (-binormal), +angle turns left (-lateralOffset)
+  let racingLineLane = ai.baseLane;
+  if (c1 > 0.14) {
+    racingLineLane = -Math.sign(signedNear) * safeMargin * cfg.apexCut;
+  } else if (c3 > 0.20) {
+    racingLineLane = Math.sign(signedFar) * safeMargin * cfg.apexCut * 0.78;
+  }
+  const targetLane = clamp(racingLineLane + ai.dynamicLaneOffset, -safeMargin, safeMargin, 0);
   const tx = ahead.x - ahead.bx * targetLane;
   const tz = ahead.z - ahead.bz * targetLane;
 
@@ -349,28 +414,22 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
   const desiredYaw = Math.atan2(dx, dz);
   const headingErr = wrapAngleRad(desiredYaw - ai.yaw);
 
-  // Upcoming curvature lookahead calibrated for realistic ~10 m/s^2 braking distances
-  const p1 = track.at((((ai.trackS || 0) + 10) % L + L) % L);
-  const p2 = track.at((((ai.trackS || 0) + 26) % L + L) % L);
-  const p3 = track.at((((ai.trackS || 0) + 46) % L + L) % L);
-  const p4 = track.at((((ai.trackS || 0) + 64) % L + L) % L);
-  const c1 = Math.abs(wrapAngleRad(p2.angle - p1.angle));
-  const c2 = Math.abs(wrapAngleRad(p3.angle - p1.angle));
-  const c3 = Math.abs(wrapAngleRad(p4.angle - p2.angle));
-  const cornerAngle = Math.max(c1, c2 * 0.85, (ai.speed || 0) > 22 ? c3 * 0.72 : 0);
-
-  // Fair rubber-banded pacing within [0.92x, 1.08x]
+  // Competitive difficulty pacing + narrow rubber-band envelope (never exceeds vehicle physical limits)
   const aiProg = computeRacerProgress(ai, track);
   const progressGap = player ? clamp((playerProg - aiProg) / 140, -1, 1, 0) : 0;
-  const paceFactor = clamp((ai.basePace || 1.0) + progressGap * 0.08, 0.92, 1.08, 1.0);
+  const paceFactor = clamp(
+    (ai.basePace || 1.0) * cfg.paceMult + progressGap * cfg.rubberBandRange,
+    0.95,
+    1.18,
+    1.05
+  );
 
-  const cornerSpeedScale = clamp(1 - cornerAngle * 0.56, 0.42, 1.0, 1.0);
+  const cornerSpeedScale = clamp(1 - cornerAngle * cfg.cornerSlowFactor, cfg.cornerMinScale, 1.0, cfg.cornerMinScale);
   const targetSpeed = (ai.def?.maxSpeed || 32.9) * paceFactor * cornerSpeedScale;
 
   let input;
   if ((ai.recoveryTimer || 0) > 0) {
     ai.recoveryTimer = Math.max(0, ai.recoveryTimer - dtSafe);
-    // Reverse cleanly away from barrier toward track centerline
     const centerSteer = clamp(-(ai.lateralOffset || 0) * 0.35, -1, 1, 0);
     input = {
       throttle: false,
@@ -381,11 +440,18 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
       boost: false
     };
   } else {
-    const steer = clamp(headingErr * 2.1, -1, 1, 0);
     const curSpeed = ai.speed || 0;
-    const throttle = curSpeed < targetSpeed;
-    const brake = curSpeed > targetSpeed + 2.0 && cornerAngle > 0.24;
-    const wantDrift = cornerAngle > 0.32 && curSpeed > 14.0 && Math.abs(headingErr) > 0.14;
+    const slip = ai.slip || 0;
+    const absSlip = Math.abs(slip);
+    const wantDrift =
+      cornerAngle > cfg.driftEntryCurv &&
+      curSpeed > 15.0 &&
+      absSlip < 0.36 &&
+      Math.abs(headingErr) > 0.08;
+    const activeSlide = !!(ai.drifting || absSlip > 0.20);
+    const steer = clamp(headingErr * (2.1 + 0.25 * cfg.driftSkill) - slip * 0.42 * cfg.driftSkill, -1, 1, 0);
+    const throttle = activeSlide ? curSpeed < targetSpeed * 1.06 : curSpeed < targetSpeed;
+    const brake = !wantDrift && !activeSlide && curSpeed > targetSpeed + cfg.brakeMargin && cornerAngle > 0.26;
     const wantBoost = false;
 
     input = {
@@ -403,12 +469,12 @@ export function stepAI(ai, dt = FIXED_DT, track = null, context = {}) {
   return ai;
 }
 
-export function stepAllAI(aiList, dt = FIXED_DT, track = null, player = null) {
+export function stepAllAI(aiList, dt = FIXED_DT, track = null, player = null, difficulty = "MEDIUM") {
   if (!Array.isArray(aiList) || !track) return;
   const allCars = player ? [player, ...aiList] : aiList;
   const playerProg = player ? computeRacerProgress(player, track) : 0;
   for (let i = 0; i < aiList.length; i++) {
-    stepAI(aiList[i], dt, track, { allCars, player, playerProgress: playerProg });
+    stepAI(aiList[i], dt, track, { allCars, player, playerProgress: playerProg, difficulty });
   }
   resolveCarCollisions(allCars, { track });
 }

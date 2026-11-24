@@ -26,6 +26,12 @@ enum class GameMode {
     GRAND_PRIX
 }
 
+enum class Difficulty {
+    EASY,
+    MEDIUM,
+    HARD
+}
+
 enum class CameraMode {
     CHASE,
     DRIVER,
@@ -82,6 +88,7 @@ data class JellyDriftSnapshot(
     val ready: Boolean = false,
     val phase: GamePhase = GamePhase.GARAGE,
     val mode: GameMode = GameMode.DRIFT_RUSH,
+    val difficulty: Difficulty = Difficulty.MEDIUM,
     val trackId: String = "sunny_coast",
     val carId: String = "jelly_gt",
     val cameraMode: CameraMode = CameraMode.CHASE,
@@ -187,6 +194,7 @@ fun parseSnapshot(raw: dynamic): JellyDriftSnapshot {
         ready = asBoolOr(raw.ready, false),
         phase = enumValueOrDefault(raw.phase, GamePhase.GARAGE),
         mode = enumValueOrDefault(raw.mode, GameMode.DRIFT_RUSH),
+        difficulty = enumValueOrDefault(raw.difficulty, Difficulty.MEDIUM),
         trackId = asStringOr(raw.trackId, "sunny_coast"),
         carId = asStringOr(raw.carId, "jelly_gt"),
         cameraMode = enumValueOrDefault(raw.cameraMode, CameraMode.CHASE),
@@ -399,12 +407,17 @@ class JellyDriftBridge {
         runCatching { controller?.selectMode(mode.name) }
     }
 
-    fun startRace(trackId: String, carId: String, mode: GameMode) {
+    fun selectDifficulty(difficulty: Difficulty) {
+        runCatching { controller?.selectDifficulty(difficulty.name) }
+    }
+
+    fun startRace(trackId: String, carId: String, mode: GameMode, difficulty: Difficulty = Difficulty.MEDIUM) {
         runCatching {
             val opts = js("({})")
             opts.trackId = trackId
             opts.carId = carId
             opts.mode = mode.name
+            opts.difficulty = difficulty.name
             controller?.startRace(opts)
         }
     }

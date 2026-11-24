@@ -181,7 +181,7 @@ fun JellyDriftHud(
                 )
             }
             val gap = snapshot.rivalGapMeters.toInt()
-            val gapText = "VS ${snapshot.rivalName} ${if (gap >= 0) "+$gap" else "$gap"}m"
+            val gapText = "VS ${snapshot.rivalName} (${snapshot.difficulty.name}) ${if (gap >= 0) "+$gap" else "$gap"}m"
             Div(
                 Modifier
                     .margin(left = 8.px)
@@ -570,7 +570,7 @@ private fun TouchControls(snapshot: JellyDriftSnapshot) {
     // Pedals, bottom-right
     padButton("touch-brake", "BRK", Modifier.position(Position.Absolute).right(14.px).bottom(84.px)) { pad.brake = it }
     padButton("touch-throttle", "GAS", Modifier.position(Position.Absolute).right(14.px).bottom(18.px)) { pad.throttle = it }
-    padButton("touch-drift", "HBK", Modifier.position(Position.Absolute).right(80.px).bottom(18.px)) { pad.drift = it }
+    padButton("touch-drift", "DRFT", Modifier.position(Position.Absolute).right(80.px).bottom(18.px)) { pad.drift = it }
 }
 
 internal object TouchBridgeHolder {

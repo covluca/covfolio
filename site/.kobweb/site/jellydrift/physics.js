@@ -423,8 +423,8 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
     }
 
     if (wantDrift && !brake && vForward > 0.2) {
-      // Spacebar = mechanical rear handbrake (~30-40% of full service brake force, never reverses)
-      const handbrakeDecel = throttle ? 1.8 : 4.2;
+      // Spacebar = dedicated Drift / Handbrake: nearly zero drag on throttle so high-speed drifts carry, firm scrub off throttle
+      const handbrakeDecel = throttle ? 0.25 : 4.5;
       const nextFwd = Math.max(0, vForward - handbrakeDecel * h);
       vForward = nextFwd < 0.06 && !throttle ? 0 : nextFwd;
     }
@@ -470,7 +470,7 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
     const steerMag = Math.abs(state.steerSmoothed);
     const driftGrip = clamp(def.driftGrip || 1.0, 0.75, 1.4, 1.0);
 
-    const hbInitiate = wantDrift && vForward > 3.0 && (Math.abs(steer) > 0.05 || absSlip > 0.08);
+    const hbInitiate = wantDrift && vForward > 2.8;
     const powerInitiate =
       vForward > 10.5 && steerMag > 0.55 && (absSlip > 0.14 || (brake && absSlip > 0.10));
     const sustainDrift =
