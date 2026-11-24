@@ -332,7 +332,7 @@ fun GarageMenu(
                 .styleModifier { property("text-shadow", "0 4px 24px rgba(243,219,91,0.25)") }
         )
         SpanText(
-            "Pick a circuit, a jelly car and a mode. Handbrake into hairpins, drift to score.",
+            "1v1 mountain pass touge. Handbrake into hairpins, link drifts to multiply score.",
             modifier = Modifier
                 .margin(top = 2.px, bottom = 8.px)
                 .fontFamily(Fonts.DM_SANS)
@@ -633,8 +633,8 @@ fun AdWatchingOverlayModal(
                     .borderRadius(10.px)
                     .border(1.px, LineStyle.Solid, rgba(255, 255, 255, 0.16f)),
                 badge = "SPONSORED REWARD",
-                title = "JELLY TURBO NITRO",
-                body = "+20s Bonus Clock & Full Tier-3 Boost Refill",
+                title = "TOUGE PIT SERVICE",
+                body = "+20s Bonus Clock & Fresh Touge Tires",
                 onIns = onContinueIns
             )
             GameButton(
@@ -683,23 +683,26 @@ fun PodiumMenu(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         SpanText(
-            "PODIUM FINISH",
+            if (snapshot.position <= 1) "1V1 VICTORY" else "RIVAL WINS",
             modifier = Modifier
                 .fontFamily(Fonts.Space_Grotesk)
                 .fontSize(1.55.cssRem)
                 .fontWeight(FontWeight.Bold)
                 .color(ACCENT_YELLOW)
         )
+        val gap = snapshot.rivalGapMeters.toInt()
+        val gapStr = "${if (gap >= 0) "+$gap" else "$gap"}m"
         SpanText(
-            "Position ${snapshot.position} of ${snapshot.aiCount + 1}",
+            "Position ${snapshot.position} of ${snapshot.aiCount + 1} ($gapStr vs ${snapshot.rivalName})",
             modifier = Modifier
                 .fontFamily(Fonts.Space_Grotesk)
                 .fontSize(1.0.cssRem)
                 .fontWeight(FontWeight.Bold)
                 .color(Colors.White)
         )
+        val bestPart = if (snapshot.bestLapSec > 0.0) " · Best ${formatLapTime(snapshot.bestLapSec)}" else ""
         SpanText(
-            "Drift score ${snapshot.driftScore} · ${snapshot.totalLaps} laps · ${snapshot.trackId.replace('_', ' ')}",
+            "Drift score ${snapshot.driftScore}$bestPart · ${snapshot.totalLaps} laps · ${snapshot.trackId.replace('_', ' ')}",
             modifier = Modifier
                 .fontFamily(Fonts.DM_SANS)
                 .fontSize(0.8.cssRem)

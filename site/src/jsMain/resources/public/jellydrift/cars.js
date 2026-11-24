@@ -133,6 +133,26 @@ export function getCar(id) {
   return CARS[id] || CARS[CAR_IDS[0]];
 }
 
+function makeContactShadowTexture(THREE) {
+  if (typeof document === "undefined" || typeof document.createElement !== "function") {
+    return null;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const grad = ctx.createRadialGradient(32, 32, 8, 32, 32, 31);
+  grad.addColorStop(0, "rgba(0, 0, 0, 0.85)");
+  grad.addColorStop(0.55, "rgba(0, 0, 0, 0.45)");
+  grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function makeWheelAssembly(radius, width, rimColor, trackGeo, trackMat) {
   const spinGroup = new THREE.Group();
   spinGroup.name = "wheel-spin";
@@ -147,6 +167,7 @@ function makeWheelAssembly(radius, width, rimColor, trackGeo, trackMat) {
     })
   );
   const tire = new THREE.Mesh(tireGeo, tireMat);
+  tire.castShadow = true;
   spinGroup.add(tire);
 
   const rimGeo = trackGeo(new THREE.CylinderGeometry(radius * 0.58, radius * 0.58, width + 0.02, 12));
@@ -254,7 +275,35 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
     })
   );
   const headLightMat = trackMat(new THREE.MeshBasicMaterial({ color: 0xfff8cf }));
-  const tailLightMat = trackMat(new THREE.MeshBasicMaterial({ color: 0xff2b48 }));
+  const tailLightMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: 0x991122,
+      emissive: 0xff1e38,
+      emissiveIntensity: 0.6,
+      roughness: 0.2,
+      metalness: 0.1
+    })
+  );
+  const brakeGlowMat = trackMat(
+    new THREE.MeshBasicMaterial({
+      color: 0xff2b48,
+      transparent: true,
+      opacity: 0.0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    })
+  );
+  const beamMat = trackMat(
+    new THREE.MeshBasicMaterial({
+      color: 0xfff6d2,
+      transparent: true,
+      opacity: 0.14,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    })
+  );
   const roofLightMat = trackMat(new THREE.MeshBasicMaterial({ color: def.id === "cobalt_hyper" ? 0x00e5ff : 0xf3db5b }));
 
   const w = def.width;
@@ -329,16 +378,50 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
   rearBumper.position.set(0, groundClearance + 0.12, -len * 0.5 + 0.02);
   body.add(rearBumper);
 
-  // Headlights & Taillights
-  const hlGeo = trackGeo(new THREE.BoxGeometry(0.34, 0.14, 0.08));
+  // Headlights, Taillights, Dynamic Brake Glows & Night Headlight Beams
+  const hlGeo = trackGeo(new THREE.BoxGeometry(0.32, 0.13, 0.08));
+  const brakeGlowGeo = trackGeo(new THREE.PlaneGeometry(0.46, 0.24));
+  const beamGeo = trackGeo(new THREE.ConeGeometry(1.15, 11.5, 12, 1, true));
+  beamGeo.rotateX(Math.PI / 2);
+  const brakeGlows = [];
+  const headlightBeams = [];
+  const isNightMode = !!(options && options.nightMode);
+
   for (const side of [-1, 1]) {
     const hl = new THREE.Mesh(hlGeo, headLightMat);
     hl.position.set(side * (w * 0.33), groundClearance + (isBuggy ? 0.38 : 0.28), len * 0.5 + 0.02);
     body.add(hl);
 
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.set(side * (w * 0.33), groundClearance + 0.20, len * 0.5 + 5.75);
+    beam.rotation.x = 0.05;
+    beam.visible = isNightMode;
+    beam.castShadow = false;
+    body.add(beam);
+    headlightBeams.push(beam);
+
     const tl = new THREE.Mesh(hlGeo, tailLightMat);
     tl.position.set(side * (w * 0.33), groundClearance + 0.34, -len * 0.5 - 0.02);
     body.add(tl);
+
+    const glow = new THREE.Mesh(brakeGlowGeo, brakeGlowMat);
+    glow.position.set(side * (w * 0.33), groundClearance + 0.34, -len * 0.5 - 0.075);
+    glow.rotation.y = Math.PI;
+    glow.castShadow = false;
+    body.add(glow);
+    brakeGlows.push(glow);
+
+    // Sculpted side mirrors & twin chrome exhaust tips
+    const mirror = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.14, 0.09, 0.12)), bodyMat);
+    mirror.position.set(side * (w * 0.52), sillTopY + 0.10, 0.62);
+    body.add(mirror);
+
+    const exhaust = new THREE.Mesh(
+      trackGeo(new THREE.CylinderGeometry(0.048, 0.048, 0.18, 10)).rotateX(Math.PI / 2),
+      trackMat(new THREE.MeshStandardMaterial({ color: 0xd1d5db, metalness: 0.85, roughness: 0.22 }))
+    );
+    exhaust.position.set(side * (w * 0.28), groundClearance + 0.07, -len * 0.5 - 0.05);
+    body.add(exhaust);
   }
 
   // --- 2. Silhouette-Distinct Details per Car ---
@@ -560,12 +643,27 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
     dashCowl.add(capPanel);
   }
 
-  // Driver instrument binnacle tucked in front of the wheel
+  // Driver instrument binnacle tucked in front of the wheel + live cockpit RPM bar
   const binnacleGeo = trackGeo(new THREE.BoxGeometry(0.42, 0.08, 0.24));
   const binnacle = new THREE.Mesh(binnacleGeo, dashMat);
   binnacle.position.set(-0.25, 0.77 + dashShiftY, 0.66);
   binnacle.rotation.x = -0.16;
   dashCowl.add(binnacle);
+
+  const rpmBacking = new THREE.Mesh(
+    trackGeo(new THREE.PlaneGeometry(0.28, 0.030)),
+    trackMat(new THREE.MeshBasicMaterial({ color: 0x090d16 }))
+  );
+  rpmBacking.position.set(-0.25, 0.77 + dashShiftY + 0.022, 0.535);
+  rpmBacking.rotation.y = Math.PI;
+  dashCowl.add(rpmBacking);
+
+  const rpmBarMat = trackMat(new THREE.MeshBasicMaterial({ color: 0x22c55e }));
+  const rpmBarGeo = trackGeo(new THREE.PlaneGeometry(0.26, 0.020));
+  const rpmBarMesh = new THREE.Mesh(rpmBarGeo, rpmBarMat);
+  rpmBarMesh.position.set(-0.25, 0.77 + dashShiftY + 0.022, 0.532);
+  rpmBarMesh.rotation.y = Math.PI;
+  dashCowl.add(rpmBarMesh);
 
   // Lower center console stack between the seats
   const consoleStackGeo = trackGeo(new THREE.BoxGeometry(0.38, 0.34, 0.44));
@@ -964,6 +1062,45 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
   rearRightSpin.position.set(-trackHalfW, rWheel, rearWheelZ);
   carRoot.add(rearRightSpin);
 
+  // Grounded radial contact shadow directly on carRoot
+  const shadowTex = makeContactShadowTexture(THREE);
+  if (shadowTex) disposables.push(shadowTex);
+  const contactShadowMat = trackMat(
+    new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      map: shadowTex,
+      transparent: true,
+      opacity: shadowTex ? 0.55 : 0.30,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1
+    })
+  );
+  const contactShadow = new THREE.Mesh(
+    trackGeo(new THREE.PlaneGeometry(w * 1.16, len * 1.08)).rotateX(-Math.PI / 2),
+    contactShadowMat
+  );
+  contactShadow.position.y = 0.03;
+  contactShadow.name = "car-contact-shadow";
+  carRoot.add(contactShadow);
+
+  // Brake calipers + castShadow on exterior body/cabin meshes
+  const caliperMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.35, metalness: 0.5 }));
+  const caliperGeo = trackGeo(new THREE.BoxGeometry(0.08, rWheel * 0.42, rWheel * 0.32));
+  for (const stGroup of [frontLeftSteer, frontRightSteer]) {
+    const cal = new THREE.Mesh(caliperGeo, caliperMat);
+    cal.position.set(0, 0.04, -rWheel * 0.24);
+    stGroup.add(cal);
+  }
+  body.traverse((obj) => {
+    if (obj.isMesh && !brakeGlows.includes(obj) && !headlightBeams.includes(obj)) obj.castShadow = true;
+  });
+  cabin.traverse((obj) => {
+    if (obj.isMesh && obj !== windshield && obj !== rearWindow && obj.material !== glassMat && obj.material !== rearGlassMat) {
+      obj.castShadow = true;
+    }
+  });
+
   const wheels = {
     frontLeftSteer,
     frontRightSteer,
@@ -974,7 +1111,14 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
     all: [frontLeftSpin, frontRightSpin, rearLeftSpin, rearRightSpin]
   };
 
-  function updateVisuals({ steerInput = 0, wheelSpin = 0, cameraMode = "CHASE" } = {}) {
+  function updateVisuals({
+    steerInput = 0,
+    wheelSpin = 0,
+    cameraMode = "CHASE",
+    braking = false,
+    rpmNorm = 0.2,
+    nightMode = null
+  } = {}) {
     const steerClamped = Number.isFinite(steerInput)
       ? Math.max(-1, Math.min(1, steerInput))
       : 0;
@@ -991,6 +1135,30 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
 
     if (driverHead) {
       driverHead.visible = cameraMode !== "DRIVER";
+    }
+
+    const isBraking = !!braking;
+    tailLightMat.emissiveIntensity = isBraking ? 2.6 : 0.6;
+    brakeGlowMat.opacity = isBraking ? 0.55 : 0.0;
+    for (let i = 0; i < brakeGlows.length; i++) {
+      brakeGlows[i].visible = isBraking;
+    }
+
+    if (nightMode !== null) {
+      for (let i = 0; i < headlightBeams.length; i++) {
+        headlightBeams[i].visible = !!nightMode;
+      }
+    }
+
+    const rNorm = Number.isFinite(rpmNorm) ? Math.max(0.06, Math.min(1, rpmNorm)) : 0.2;
+    rpmBarMesh.scale.x = rNorm;
+    rpmBarMesh.position.x = -0.25 + 0.13 * (1 - rNorm);
+    if (rNorm >= 0.85) {
+      rpmBarMat.color.setHex(0xff2b48);
+    } else if (rNorm >= 0.62) {
+      rpmBarMat.color.setHex(0xf3db5b);
+    } else {
+      rpmBarMat.color.setHex(0x22c55e);
     }
   }
 

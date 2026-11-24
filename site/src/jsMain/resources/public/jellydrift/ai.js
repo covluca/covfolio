@@ -66,8 +66,32 @@ function safeSpawnLane(track, rawLane) {
   return clamp(rawLane, -maxLane, maxLane, 0);
 }
 
-export function createAIState(track, index = 0) {
-  const profile = AI_PROFILES[index % AI_PROFILES.length];
+const TRACK_RIVAL_CAR = {
+  sunny_coast: "jelly_gt",
+  canyon_loop: "bumble_buggy",
+  neon_circuit: "tofu_86"
+};
+
+function pickProfile(index = 0, opts = {}) {
+  const idx = Math.max(0, index | 0);
+  const trackId = opts && typeof opts.trackId === "string" ? opts.trackId : null;
+  const excludeCarId = opts && typeof opts.excludeCarId === "string" ? opts.excludeCarId : null;
+  const preferredCar = idx === 0 && trackId ? TRACK_RIVAL_CAR[trackId] : null;
+  if (preferredCar) {
+    const match = AI_PROFILES.find((p) => p.carId === preferredCar && p.carId !== excludeCarId);
+    if (match) return match;
+  }
+  if (excludeCarId) {
+    for (let k = 0; k < AI_PROFILES.length; k++) {
+      const candidate = AI_PROFILES[(idx + k) % AI_PROFILES.length];
+      if (candidate.carId !== excludeCarId) return candidate;
+    }
+  }
+  return AI_PROFILES[idx % AI_PROFILES.length];
+}
+
+export function createAIState(track, index = 0, opts = {}) {
+  const profile = pickProfile(index, { trackId: opts?.trackId ?? track?.id, excludeCarId: opts?.excludeCarId });
   const carDef = getCar(profile.carId);
   const spawnS = 8 + index * 8.0;
   const lane = safeSpawnLane(track, profile.baseLane);
@@ -91,15 +115,19 @@ export function createAIState(track, index = 0) {
   return ai;
 }
 
-export function resetAIState(ai, track, index = null) {
+export function resetAIState(ai, track, index = null, opts = {}) {
   const idx = index !== null ? index : ai.index || 0;
-  const profile = AI_PROFILES[idx % AI_PROFILES.length];
+  const profile = pickProfile(idx, { trackId: opts?.trackId ?? track?.id, excludeCarId: opts?.excludeCarId });
   const carDef = getCar(profile.carId);
   const spawnS = 8 + idx * 8.0;
   const lane = safeSpawnLane(track, profile.baseLane);
 
   resetCarPhysicsState(ai, track, carDef, { s: spawnS, lane });
   ai.index = idx;
+  ai.id = profile.id;
+  ai.name = profile.name;
+  ai.carId = profile.carId;
+  ai.colorHex = profile.colorHex;
   ai.profile = profile;
   ai.basePace = profile.basePace;
   ai.baseLane = lane;

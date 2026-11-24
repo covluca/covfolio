@@ -40,6 +40,8 @@ export function createAudio() {
   let disposed = false;
   let failed = false;
   let wasBoosting = false;
+  let prevGear = 0;
+  let shiftPulseUntil = 0;
   let unlockAttached = false;
 
   function removeUnlockListeners() {
@@ -545,9 +547,9 @@ export function createAudio() {
 
     // Simulated 5-speed gearbox RPM curve avoids shrill alarm-siren runaway across speeds
     let rpmNorm = 0.10;
+    let gIdx = 0;
     if (spd >= 1.5) {
-      const bands = [0, 32, 56, 80, 102, 130];
-      let gIdx = 0;
+      const bands = [0, 26, 50, 74, 98, 125];
       for (let i = 0; i < bands.length - 1; i++) {
         if (spd >= bands[i]) gIdx = i;
       }
@@ -556,6 +558,12 @@ export function createAudio() {
       const frac = clamp((spd - lo) / Math.max(1, hi - lo), 0, 1, 0);
       const gearFloor = gIdx === 0 ? 0.14 : 0.36;
       rpmNorm = clamp(gearFloor + frac * (0.94 - gearFloor), 0.10, 0.96, 0.25);
+      if (gIdx > prevGear && prevGear >= 0) {
+        shiftPulseUntil = now + 0.09;
+      }
+      prevGear = gIdx;
+    } else {
+      prevGear = 0;
     }
 
     let load = 0;
@@ -583,12 +591,13 @@ export function createAudio() {
     safeSetTarget(engineFilter.Q, pos(0.85 + 0.25 * load, 0.4), now, 0.08);
     safeSetTarget(engineGain.gain, pos(0.75 + 0.12 * rpmNorm + 0.08 * load, 0.15), now, 0.055);
 
+    const shiftBoost = now < shiftPulseUntil ? 0.022 : 0;
     if (growlSrc && growlFilter && growlGain) {
-      const growlFreq = pos(340 + 480 * rpmNorm + 220 * load, 100);
-      const targetGrowl = muted ? 0 : Math.min(0.06, pos(0.012 + 0.03 * load + 0.018 * rpmNorm, 0.005));
-      safeSetTarget(growlFilter.frequency, growlFreq, now, 0.065);
+      const growlFreq = pos(340 + 480 * rpmNorm + 220 * load + (shiftBoost > 0 ? 180 : 0), 100);
+      const targetGrowl = muted ? 0 : Math.min(0.08, pos(0.012 + 0.03 * load + 0.018 * rpmNorm + shiftBoost, 0.005));
+      safeSetTarget(growlFilter.frequency, growlFreq, now, 0.045);
       safeSetTarget(growlFilter.Q, pos(1.1 + 0.4 * load, 0.5), now, 0.08);
-      safeSetTarget(growlGain.gain, targetGrowl, now, 0.055);
+      safeSetTarget(growlGain.gain, targetGrowl, now, 0.035);
     }
 
     // Master gain

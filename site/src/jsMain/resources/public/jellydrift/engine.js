@@ -22,6 +22,7 @@ import {
   stepAllAI,
   updateRacerCheckpoints,
   computeRaceStandings,
+  computeRacerProgress,
 } from "./ai.js";
 import { createVfx } from "./vfx.js";
 import { createAudio } from "./audio.js";
@@ -33,6 +34,102 @@ const DRIFT_RUSH_START = 32.0;
 const CONTINUE_TIME = 20.0;
 const CHECKPOINT_BONUS = 2.4;
 const COUNTDOWN_START = 1.5;
+
+const RECORDS_STORAGE_KEY = "jellydrift_records_v1";
+
+function computeGearbox(speedMs) {
+  const kmh = (Number.isFinite(speedMs) ? speedMs : 0) * 3.6;
+  if (kmh < -1.5) {
+    return { gear: -1, rpmNorm: clamp(0.2 + (Math.abs(kmh) / 50) * 0.7, 0.2, 0.9) };
+  }
+  const absKmh = Math.abs(kmh);
+  if (absKmh < 1.5) {
+    return { gear: 1, rpmNorm: 0.16 };
+  }
+  const bands = [0, 26, 50, 74, 98, 125];
+  let gIdx = 0;
+  for (let i = 0; i < bands.length - 1; i++) {
+    if (absKmh >= bands[i]) gIdx = i;
+  }
+  const lo = bands[gIdx];
+  const hi = bands[gIdx + 1];
+  const frac = clamp((absKmh - lo) / Math.max(1, hi - lo), 0, 1);
+  const floor = gIdx === 0 ? 0.16 : 0.38;
+  return { gear: gIdx + 1, rpmNorm: clamp(floor + frac * (0.96 - floor), 0.16, 0.98) };
+}
+
+function buildMinimapData(track) {
+  if (!track || typeof track.at !== "function" || !Number.isFinite(track.length) || track.length <= 0) {
+    return { path: "", cx: 0, cz: 0, scale: 1 };
+  }
+  const pts = [];
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  const count = 64;
+  for (let i = 0; i < count; i++) {
+    const p = track.at((i / count) * track.length);
+    if (!p) continue;
+    pts.push(p);
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.z < minZ) minZ = p.z;
+    if (p.z > maxZ) maxZ = p.z;
+  }
+  if (!pts.length) return { path: "", cx: 0, cz: 0, scale: 1 };
+  const cx = (minX + maxX) * 0.5;
+  const cz = (minZ + maxZ) * 0.5;
+  const span = Math.max(maxX - minX, maxZ - minZ, 1);
+  const scale = 80 / span;
+  const segs = pts.map((p, idx) => {
+    const mx = (50 - (p.x - cx) * scale).toFixed(1);
+    const my = (50 - (p.z - cz) * scale).toFixed(1);
+    return `${idx === 0 ? "M" : "L"}${mx},${my}`;
+  });
+  segs.push("Z");
+  return { path: segs.join(" "), cx, cz, scale };
+}
+
+function worldToMinimap(pos, bounds) {
+  if (!pos || !bounds || !Number.isFinite(pos.x) || !Number.isFinite(pos.z)) {
+    return { x: 50, y: 50 };
+  }
+  return {
+    x: clamp(50 - (pos.x - bounds.cx) * bounds.scale, 4, 96),
+    y: clamp(50 - (pos.z - bounds.cz) * bounds.scale, 4, 96),
+  };
+}
+
+function loadTrackRecord(trackId) {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return null;
+    const raw = window.localStorage.getItem(RECORDS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && parsed[trackId] ? parsed[trackId] : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function saveTrackRecord(trackId, bestLapSec, bestDriftScore) {
+  try {
+    if (typeof window === "undefined" || !window.localStorage || !trackId) return;
+    const raw = window.localStorage.getItem(RECORDS_STORAGE_KEY);
+    const all = raw ? JSON.parse(raw) || {} : {};
+    const prev = all[trackId] || {};
+    const nextLap =
+      bestLapSec > 0 && (!(prev.bestLapSec > 0) || bestLapSec < prev.bestLapSec)
+        ? bestLapSec
+        : prev.bestLapSec || 0;
+    const nextDrift = Math.max(prev.bestDriftScore || 0, Math.round(bestDriftScore || 0));
+    all[trackId] = { bestLapSec: nextLap, bestDriftScore: nextDrift };
+    window.localStorage.setItem(RECORDS_STORAGE_KEY, JSON.stringify(all));
+  } catch (_) {
+    /* ignore storage limits */
+  }
+}
 
 function disposeObject(obj) {
   if (!obj) return;
@@ -92,6 +189,19 @@ export function createJellyDriftEngine(config) {
     timeRemainingSec: DRIFT_RUSH_START,
     continuesUsed: 0,
     driftScore: 0,
+    driftCombo: 0,
+    driftMultiplier: 1,
+    lapTimeSec: 0,
+    bestLapSec: 0,
+    rivalGapMeters: 0,
+    rivalName: "K. Fujiwara",
+    gear: 1,
+    rpmNorm: 0.2,
+    minimapPath: "",
+    playerMapX: 50,
+    playerMapY: 50,
+    rivalMapX: 50,
+    rivalMapY: 50,
     position: 1,
     countdown: 0,
     fps: 60,
@@ -110,6 +220,14 @@ export function createJellyDriftEngine(config) {
   let cameraRig = null;
   let camera = null;
   let adProjector = null;
+  let skyDome = null;
+  let sunLight = null;
+  const sunDir = new THREE.Vector3(0.45, 0.72, 0.52).normalize();
+  let minimapBounds = null;
+  let driftComboRaw = 0;
+  let comboHoldTimer = 0;
+  let comboTime = 0;
+  let bankedDriftScore = 0;
 
   let rafId = 0;
   let lastTime = 0;
@@ -151,8 +269,12 @@ export function createJellyDriftEngine(config) {
       powerPreference: "high-performance",
       preserveDrawingBuffer: true,
     });
-    renderer.setPixelRatio(1);
+    renderer.setPixelRatio(Math.min((typeof window !== "undefined" && window.devicePixelRatio) || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     const canvas = renderer.domElement;
     canvas.style.display = "block";
     canvas.style.width = "100%";
@@ -185,27 +307,112 @@ export function createJellyDriftEngine(config) {
   // World building
   // ---------------------------------------------------------------------
   function addSkyAndLights(track) {
+    const isCanyon = track.id === "canyon_loop";
+    const isNeon = track.id === "neon_circuit";
+    const topHex = isNeon ? 0x040714 : isCanyon ? 0x2b2d5c : 0x2c86d4;
+    const horHex = isNeon ? 0x181c3a : isCanyon ? 0xf08c4b : 0xb8e6f7;
+    const botHex = isNeon ? 0x050810 : isCanyon ? 0x8c472b : 0x68b5d8;
+    const sunHex = isNeon ? 0x9ec5ff : isCanyon ? 0xffd07a : 0xfff6d6;
+    const starsVal = isNeon ? 1.0 : isCanyon ? 0.15 : 0.0;
+
+    if (isNeon) {
+      sunDir.set(-0.35, 0.65, 0.55).normalize();
+    } else if (isCanyon) {
+      sunDir.set(-0.55, 0.42, -0.45).normalize();
+    } else {
+      sunDir.set(0.45, 0.72, 0.52).normalize();
+    }
+
     scene.background = new THREE.Color(track.skyHex || "#79CBE8");
     scene.fog = new THREE.Fog(
       track.fogColor != null ? track.fogColor : 0x8ad4ec,
       track.fogNear || 260,
       track.fogFar || 1350
     );
+
+    const skyGeo = new THREE.SphereGeometry(1800, 24, 16);
+    const skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+      uniforms: {
+        uTopColor: { value: new THREE.Color(topHex) },
+        uHorizonColor: { value: new THREE.Color(horHex) },
+        uBottomColor: { value: new THREE.Color(botHex) },
+        uSunDir: { value: sunDir.clone() },
+        uSunColor: { value: new THREE.Color(sunHex) },
+        uStars: { value: starsVal },
+      },
+      vertexShader: `
+        varying vec3 vDir;
+        void main() {
+          vDir = normalize(position);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uTopColor;
+        uniform vec3 uHorizonColor;
+        uniform vec3 uBottomColor;
+        uniform vec3 uSunDir;
+        uniform vec3 uSunColor;
+        uniform float uStars;
+        varying vec3 vDir;
+        float hash31(vec3 p) {
+          p = fract(p * vec3(443.897, 441.423, 437.195));
+          p += dot(p, p.yzx + 19.19);
+          return fract((p.x + p.y) * p.z);
+        }
+        void main() {
+          vec3 d = normalize(vDir);
+          float h = d.y;
+          vec3 col = h >= 0.0
+            ? mix(uHorizonColor, uTopColor, pow(clamp(h, 0.0, 1.0), 0.55))
+            : mix(uHorizonColor, uBottomColor, pow(clamp(-h, 0.0, 1.0), 0.65));
+          float sunDot = max(0.0, dot(d, normalize(uSunDir)));
+          col += uSunColor * (pow(sunDot, 14.0) * 0.25 + smoothstep(0.996, 0.9994, sunDot) * 0.9);
+          if (uStars > 0.01 && h > 0.04) {
+            float cell = hash31(floor(d * 180.0));
+            if (cell > 0.9935) {
+              float tw = (cell - 0.9935) / 0.0065;
+              col += vec3(0.85, 0.92, 1.0) * tw * uStars * smoothstep(0.04, 0.35, h);
+            }
+          }
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `,
+    });
+    skyDome = new THREE.Mesh(skyGeo, skyMat);
+    skyDome.name = "sky-dome";
+    scene.add(skyDome);
+
     const groundCol = (track.theme && track.theme.groundColor) || 0x3b4252;
-    const hemi = new THREE.HemisphereLight(0xffffff, groundCol, 1.35);
+    const hemi = new THREE.HemisphereLight(isNeon ? 0xa5b4fc : 0xffffff, groundCol, isNeon ? 0.95 : 1.35);
     hemi.position.set(0, 140, 0);
     scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xfff4e0, 1.25);
-    sun.position.set(130, 190, 90);
-    scene.add(sun);
+    sunLight = new THREE.DirectionalLight(sunHex, isNeon ? 0.85 : 1.32);
+    sunLight.position.copy(sunDir).multiplyScalar(90);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(1024, 1024);
+    sunLight.shadow.bias = -0.0006;
+    sunLight.shadow.camera.left = -28;
+    sunLight.shadow.camera.right = 28;
+    sunLight.shadow.camera.top = 28;
+    sunLight.shadow.camera.bottom = -28;
+    sunLight.shadow.camera.near = 10;
+    sunLight.shadow.camera.far = 260;
+    scene.add(sunLight);
+    scene.add(sunLight.target);
 
-    const fill = new THREE.DirectionalLight(0x88aaff, 0.42);
+    const fill = new THREE.DirectionalLight(isNeon ? 0x38bdf8 : 0x88aaff, isNeon ? 0.55 : 0.42);
     fill.position.set(-110, 70, -100);
     scene.add(fill);
   }
 
   function cleanupWorld() {
+    skyDome = null;
+    sunLight = null;
     if (vfx) {
       try {
         vfx.dispose();
@@ -270,20 +477,27 @@ export function createJellyDriftEngine(config) {
     player.lap = 1;
     player.checkpointIndex = 0;
 
-    const playerMesh = createCarMesh(def, { cameraMode: state.cameraMode });
+    const isNight = track.id === "neon_circuit";
+    const playerMesh = createCarMesh(def, { cameraMode: state.cameraMode, nightMode: isNight });
     scene.add(playerMesh.carRoot);
 
     aiList = [];
     const aiMeshes = [];
     for (let i = 0; i < AI_COUNT; i++) {
-      const ai = createAIState(track, i);
-      resetAIState(ai, track, i);
+      const ai = createAIState(track, i, { trackId: track.id, excludeCarId: def.id });
+      resetAIState(ai, track, i, { trackId: track.id, excludeCarId: def.id });
       aiList.push(ai);
-      const aiMesh = createCarMesh(ai.def || getCar(ai.carId), { isAI: true });
+      const aiMesh = createCarMesh(ai.def || getCar(ai.carId), { isAI: true, nightMode: isNight });
       aiMesh.carRoot.visible = !forGarage;
       scene.add(aiMesh.carRoot);
       aiMeshes.push(aiMesh);
     }
+
+    minimapBounds = buildMinimapData(track);
+    state.minimapPath = minimapBounds.path;
+    state.rivalName = (aiList[0] && aiList[0].name) || "K. Fujiwara";
+    const savedRec = loadTrackRecord(track.id);
+    state.bestLapSec = savedRec && savedRec.bestLapSec > 0 ? savedRec.bestLapSec : 0;
 
     vfx = createVfx(THREE, scene);
 
@@ -318,6 +532,18 @@ export function createJellyDriftEngine(config) {
     state.lap = 1;
     state.checkpointIndex = 0;
     state.driftScore = 0;
+    state.driftCombo = 0;
+    state.driftMultiplier = 1;
+    state.lapTimeSec = 0;
+    state.rivalGapMeters = 0;
+    state.gear = 1;
+    state.rpmNorm = 0.2;
+    driftComboRaw = 0;
+    comboHoldTimer = 0;
+    comboTime = 0;
+    bankedDriftScore = 0;
+    const savedRec = loadTrackRecord(world.track.id);
+    state.bestLapSec = savedRec && savedRec.bestLapSec > 0 ? savedRec.bestLapSec : 0;
     state.continuesUsed = 0;
     state.position = 1;
     state.timeRemainingSec = state.mode === "DRIFT_RUSH" ? DRIFT_RUSH_START : 0;
@@ -331,8 +557,9 @@ export function createJellyDriftEngine(config) {
     player.checkpointIndex = 0;
 
     for (let i = 0; i < aiList.length; i++) {
-      resetAIState(aiList[i], world.track, i);
+      resetAIState(aiList[i], world.track, i, { trackId: world.track.id, excludeCarId: world.def.id });
     }
+    state.rivalName = (aiList[0] && aiList[0].name) || "K. Fujiwara";
     if (vfx && typeof vfx.reset === "function") {
       vfx.reset();
     }
@@ -613,10 +840,17 @@ export function createJellyDriftEngine(config) {
 
     const prevBoostTime = player.boostTime || 0;
     const prevCollisionPulse = player.collisionPulse || 0;
+    const prevDriftPts = player.driftScore || 0;
 
     stepCarPhysics(player, input, dt, track);
     stepAllAI(aiList, dt, track, player);
 
+    state.lapTimeSec += dt;
+    const gb = computeGearbox(player.speed || 0);
+    state.gear = gb.gear;
+    state.rpmNorm = gb.rpmNorm;
+
+    const heavyHit = (player.collisionPulse || 0) > 0.35 && (player.collisionPulse || 0) > prevCollisionPulse + 0.12;
     if ((player.boostTime || 0) > prevBoostTime + 0.2) {
       audio.playBoost(player.activeBoostTier || 1);
     }
@@ -624,9 +858,37 @@ export function createJellyDriftEngine(config) {
       audio.playCollision(clamp(player.collisionPulse, 0.2, 1.0));
     }
 
+    const earnedPts = Math.max(0, (player.driftScore || 0) - prevDriftPts);
+    if (heavyHit) {
+      // Heavy impact drops unbanked combo chain
+      driftComboRaw = 0;
+      state.driftCombo = 0;
+      state.driftMultiplier = 1;
+      comboHoldTimer = 0;
+      comboTime = 0;
+    } else if (player.drifting && earnedPts > 0) {
+      driftComboRaw += earnedPts;
+      comboHoldTimer = 1.6;
+      comboTime += dt;
+      state.driftMultiplier = clamp(1 + Math.floor(comboTime / 1.2), 1, 5);
+      state.driftCombo = Math.round(driftComboRaw);
+    } else if (comboHoldTimer > 0) {
+      comboHoldTimer = Math.max(0, comboHoldTimer - dt);
+      if (comboHoldTimer <= 0 && driftComboRaw > 0) {
+        const banked = Math.round(driftComboRaw * state.driftMultiplier);
+        bankedDriftScore += banked;
+        if (banked >= 150) audio.playCheckpoint(false);
+        driftComboRaw = 0;
+        state.driftCombo = 0;
+        state.driftMultiplier = 1;
+        comboTime = 0;
+      }
+    }
+
+    state.driftScore = Math.round(bankedDriftScore + state.driftCombo * state.driftMultiplier);
+
     const cpRes = updateRacerCheckpoints(player, track);
     state.checkpointIndex = player.checkpointIndex || 0;
-    state.driftScore = Math.round(player.driftScore || 0);
 
     if (cpRes.crossed) {
       audio.playCheckpoint(cpRes.isLap);
@@ -635,7 +897,20 @@ export function createJellyDriftEngine(config) {
         state.timeRemainingSec = Math.min(45.0, state.timeRemainingSec + CHECKPOINT_BONUS);
       }
       if (cpRes.isLap) {
+        if (state.lapTimeSec > 3.0 && (state.bestLapSec <= 0 || state.lapTimeSec < state.bestLapSec)) {
+          state.bestLapSec = state.lapTimeSec;
+        }
+        state.lapTimeSec = 0;
+        saveTrackRecord(track.id, state.bestLapSec, state.driftScore);
         if (state.mode === "GRAND_PRIX" && player.lap > state.totalLaps) {
+          if (driftComboRaw > 0) {
+            bankedDriftScore += Math.round(driftComboRaw * state.driftMultiplier);
+            driftComboRaw = 0;
+            state.driftCombo = 0;
+            state.driftMultiplier = 1;
+            state.driftScore = Math.round(bankedDriftScore);
+            saveTrackRecord(track.id, state.bestLapSec, state.driftScore);
+          }
           state.lap = state.totalLaps;
           state.phase = "FINISHED";
           state.continueOpen = false;
@@ -650,6 +925,9 @@ export function createJellyDriftEngine(config) {
 
     const standings = computeRaceStandings(player, aiList, track);
     state.position = clamp(standings.position, 1, 1 + AI_COUNT);
+    state.rivalGapMeters = aiList[0]
+      ? Math.round(computeRacerProgress(player, track) - computeRacerProgress(aiList[0], track))
+      : 0;
 
     if (state.mode === "DRIFT_RUSH" && state.phase === "RACING") {
       state.timeRemainingSec = Math.max(0, state.timeRemainingSec - dt);
@@ -690,8 +968,18 @@ export function createJellyDriftEngine(config) {
       steerInput: input.steer,
       wheelSpin,
       cameraMode: state.cameraMode,
+      braking: !!(input.brake || input.drift),
+      rpmNorm: state.rpmNorm,
     });
     world.playerRoot.updateMatrixWorld(true);
+    if (skyDome) {
+      skyDome.position.set(player.pos.x, py, player.pos.z);
+    }
+    if (sunLight) {
+      sunLight.position.set(player.pos.x + sunDir.x * 90, py + sunDir.y * 90, player.pos.z + sunDir.z * 90);
+      sunLight.target.position.set(player.pos.x, py, player.pos.z);
+      sunLight.target.updateMatrixWorld();
+    }
   }
 
   function syncAIVisual(dt) {
@@ -723,10 +1011,13 @@ export function createJellyDriftEngine(config) {
       aiMesh.jellyChassis.scale.set(1 + 0.5 * sq, 1 - sq, 1 + 0.5 * sq);
 
       const wheelSpin = dt > 0 ? ((ai.speed || 0) * dt) / ((ai.def && ai.def.wheelRadius) || 0.36) : 0;
+      const aiGb = computeGearbox(ai.speed || 0);
       aiMesh.updateVisuals({
         steerInput: (ai.lastInput && ai.lastInput.steer) || 0,
         wheelSpin,
         cameraMode: "CHASE",
+        braking: !!(ai.lastInput && (ai.lastInput.brake || ai.lastInput.drift)),
+        rpmNorm: aiGb.rpmNorm,
       });
       aiMesh.carRoot.updateMatrixWorld(true);
     }
@@ -858,6 +1149,9 @@ export function createJellyDriftEngine(config) {
       }
     }
 
+    const pMap = player && minimapBounds ? worldToMinimap(player.pos, minimapBounds) : { x: 50, y: 50 };
+    const rMap = aiList[0] && minimapBounds ? worldToMinimap(aiList[0].pos, minimapBounds) : { x: 50, y: 50 };
+
     return {
       ready: state.ready,
       phase: forUiCallback ? state.phase : uiPhase,
@@ -869,6 +1163,19 @@ export function createJellyDriftEngine(config) {
       isDrifting: player ? !!player.drifting : false,
       driftAngleDeg: player ? driftAngleDeg(player) : 0,
       driftScore: Math.round(state.driftScore),
+      driftCombo: state.driftCombo,
+      driftMultiplier: state.driftMultiplier,
+      lapTimeSec: state.lapTimeSec,
+      bestLapSec: state.bestLapSec,
+      rivalGapMeters: state.rivalGapMeters,
+      rivalName: state.rivalName,
+      gear: state.gear,
+      rpmNorm: state.rpmNorm,
+      minimapPath: state.minimapPath,
+      playerMapX: pMap.x,
+      playerMapY: pMap.y,
+      rivalMapX: rMap.x,
+      rivalMapY: rMap.y,
       boostCharge: player ? clamp(player.boostCharge, 0, 1) : 0,
       boostTier: player ? boostTierFor(player.boostCharge) : 0,
       lap: state.lap,
@@ -1005,7 +1312,8 @@ export function createJellyDriftEngine(config) {
             dt,
             player,
             state.phase === "RACING" && player.drifting,
-            false
+            false,
+            { rivals: state.phase === "RACING" ? aiList : [] }
           );
         } catch (_) {
           /* visual-only */

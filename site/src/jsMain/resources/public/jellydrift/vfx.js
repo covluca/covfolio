@@ -71,11 +71,13 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
   }
 
   const MAX_SKIDS = 360;
-  const MAX_SMOKE = 176;
+  const MAX_SMOKE = 224;
   const MAX_SPARKS = 96;
   const HIDDEN_Y = -9999;
   const SMOKE_INTERVAL = 1 / 55;
+  const RIVAL_SMOKE_INTERVAL = 1 / 28;
   const SKID_INTERVAL = 0.024;
+  let rivalSmokeTimer = 0;
 
   let disposed = false;
   const disposables = [];
@@ -596,6 +598,36 @@ export function createVfx(threeOrScene, sceneOrOpts = null, maybeOpts = {}) {
 
       // Boost flames removed (OC-4): cars never boost.
       // Handbrake drift smoke above is the primary feedback cue.
+
+      // Rival AI drift tire smoke puffs
+      if (Array.isArray(extra?.rivals) && extra.rivals.length > 0) {
+        rivalSmokeTimer += dtSafe;
+        if (rivalSmokeTimer >= RIVAL_SMOKE_INTERVAL) {
+          rivalSmokeTimer = 0;
+          for (let rIdx = 0; rIdx < extra.rivals.length; rIdx++) {
+            const rival = extra.rivals[rIdx];
+            if (!rival || !rival.pos || !rival.drifting) continue;
+            if (Math.abs(finiteOr(rival.slip, 0)) <= 0.16 || Math.abs(finiteOr(rival.speed, 0)) <= 4.0) continue;
+            const ryaw = finiteOr(rival.yaw, 0);
+            const rSin = Math.sin(ryaw);
+            const rCos = Math.cos(ryaw);
+            const rCenterX = finiteOr(rival.pos.x, 0) - rSin * 1.42;
+            const rCenterZ = finiteOr(rival.pos.z, 0) - rCos * 1.42;
+            const rBaseY = finiteOr(rival.pos.y, 0) + 0.12;
+            for (const side of [1, -1]) {
+              emit(
+                rCenterX + rCos * 0.72 * side + (Math.random() - 0.5) * 0.22,
+                rBaseY + Math.random() * 0.12,
+                rCenterZ - rSin * 0.72 * side + (Math.random() - 0.5) * 0.22,
+                0.93,
+                0.95,
+                0.98,
+                0.42 + Math.random() * 0.18
+              );
+            }
+          }
+        }
+      }
     }
 
     // Advance smoke particle ring buffer (grow size, fade alpha cleanly — never darken to black)

@@ -35,34 +35,46 @@ function makeCanvasTexture(width, height, drawFn, repeatX = 1, repeatY = 1) {
 }
 
 function createRoadTexture(theme) {
-  return makeCanvasTexture(
-    256,
-    256,
+  const tex = makeCanvasTexture(
+    512,
+    512,
     (ctx, w, h) => {
       ctx.fillStyle = theme.roadHex;
       ctx.fillRect(0, 0, w, h);
 
-      // Subtle deterministic asphalt grain
-      for (let i = 0; i < 650; i++) {
-        const gx = ((i * 73) % w);
-        const gy = ((i * 139) % h);
-        ctx.fillStyle = i % 2 === 0 ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.08)";
+      // Subtle tire-wear tracks along left & right 2-lane touge driving lines
+      for (const laneX of [w * 0.26, w * 0.74]) {
+        const grad = ctx.createLinearGradient(laneX - 46, 0, laneX + 46, 0);
+        grad.addColorStop(0, "rgba(0,0,0,0)");
+        grad.addColorStop(0.5, "rgba(0,0,0,0.16)");
+        grad.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = grad;
+        ctx.fillRect(laneX - 46, 0, 92, h);
+      }
+
+      // Fine deterministic asphalt aggregate grain
+      for (let i = 0; i < 2400; i++) {
+        const gx = (i * 137 + (i % 7) * 19) % w;
+        const gy = (i * 263 + (i % 11) * 23) % h;
+        ctx.fillStyle = i % 3 === 0 ? "rgba(255,255,255,0.038)" : "rgba(0,0,0,0.085)";
         ctx.fillRect(gx, gy, 2, 2);
       }
 
-      // Edge shoulder stripes
+      // Crisp edge shoulder stripes
       ctx.fillStyle = theme.edgeStripeHex;
-      ctx.fillRect(6, 0, 7, h);
-      ctx.fillRect(w - 13, 0, 7, h);
+      ctx.fillRect(10, 0, 12, h);
+      ctx.fillRect(w - 22, 0, 12, h);
 
-      // Dashed center line
+      // Japanese touge dashed center line
       ctx.fillStyle = theme.centerLineHex;
-      ctx.fillRect(w * 0.5 - 4, 16, 8, 92);
-      ctx.fillRect(w * 0.5 - 4, 144, 8, 92);
+      ctx.fillRect(w * 0.5 - 6, 28, 12, 184);
+      ctx.fillRect(w * 0.5 - 6, 284, 12, 184);
     },
     1,
     1
   );
+  if (tex) tex.anisotropy = 8;
+  return tex;
 }
 
 function createCurbTexture(c1, c2) {
@@ -922,6 +934,7 @@ export function buildTrackMeshes(track) {
   ground.position.y = track.groundY;
   ground.position.x = track.id === "sunny_coast" ? -70 : 0;
   ground.position.z = track.id === "sunny_coast" ? -65 : -55;
+  ground.receiveShadow = true;
   ground.name = "ground-plane";
   group.add(ground);
 
@@ -955,6 +968,7 @@ export function buildTrackMeshes(track) {
     })
   );
   const roadMesh = new THREE.Mesh(roadGeo, roadMat);
+  roadMesh.receiveShadow = true;
   roadMesh.name = "road-surface";
   group.add(roadMesh);
 
@@ -989,7 +1003,9 @@ export function buildTrackMeshes(track) {
       1 / SAMPLE_COUNT
     )
   );
-  group.add(new THREE.Mesh(leftCurbGeo, curbMat));
+  const leftCurbMesh = new THREE.Mesh(leftCurbGeo, curbMat);
+  leftCurbMesh.receiveShadow = true;
+  group.add(leftCurbMesh);
 
   // Right curb (-binormal)
   const rightCurbGeo = trackGeom(
@@ -1008,7 +1024,9 @@ export function buildTrackMeshes(track) {
       1 / SAMPLE_COUNT
     )
   );
-  group.add(new THREE.Mesh(rightCurbGeo, curbMat));
+  const rightCurbMesh = new THREE.Mesh(rightCurbGeo, curbMat);
+  rightCurbMesh.receiveShadow = true;
+  group.add(rightCurbMesh);
 
   // 4. Guardrails / Barriers (at ±(halfWidth + 0.62), height +0.78m)
   const railMat = trackMat(
@@ -1070,6 +1088,41 @@ export function buildTrackMeshes(track) {
       group.add(post);
     }
   }
+
+  // Reflective guardrail cat's-eye studs (zero-overhead single InstancedMesh)
+  const studIndices = [];
+  for (let i = 0; i < SAMPLE_COUNT; i += 6) {
+    studIndices.push(i);
+  }
+  const studCount = studIndices.length * 2;
+  const studGeo = trackGeom(new THREE.BoxGeometry(0.06, 0.08, 0.18));
+  const studMat = trackMat(new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  const studMesh = new THREE.InstancedMesh(studGeo, studMat, studCount);
+  studMesh.name = "guardrail-reflectors";
+  const studDummy = new THREE.Object3D();
+  const outerCol = new THREE.Color(0xff9f1c);
+  const innerCol = new THREE.Color(track.id === "neon_circuit" ? 0x38bdf8 : 0xf1f5f9);
+  let studPtr = 0;
+  for (const idx of studIndices) {
+    const s = samples[idx];
+    const curveOutSide = Math.abs(s.curvature) > 0.012 ? (s.curvature > 0 ? -1 : 1) : 0;
+    for (const side of [1, -1]) {
+      const dist = side * (s.halfWidth + 0.58);
+      studDummy.position.set(
+        s.x + s.bx * dist + s.nx * 0.58,
+        s.y + s.by * dist + s.ny * 0.58,
+        s.z + s.bz * dist + s.nz * 0.58
+      );
+      studDummy.rotation.set(0, s.angle, 0);
+      studDummy.updateMatrix();
+      studMesh.setMatrixAt(studPtr, studDummy.matrix);
+      studMesh.setColorAt(studPtr, side === curveOutSide ? outerCol : innerCol);
+      studPtr++;
+    }
+  }
+  studMesh.instanceMatrix.needsUpdate = true;
+  if (studMesh.instanceColor) studMesh.instanceColor.needsUpdate = true;
+  group.add(studMesh);
 
   // 5. Bridge Deck Underside & Support Pillars (for elevated sections & overpass)
   const undersideMat = trackMat(
