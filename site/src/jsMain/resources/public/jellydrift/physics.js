@@ -74,7 +74,10 @@ function sanitizeState(s, track) {
   if (typeof s.brakedFromForward !== "boolean") s.brakedFromForward = false;
   if (!Number.isFinite(s.brakeStopHoldSec)) s.brakeStopHoldSec = 0;
   if (!Number.isFinite(s.steerSmoothed)) s.steerSmoothed = 0;
+  if (!Number.isFinite(s.driftState)) s.driftState = 0;
+  s.driftState = clamp(s.driftState, 0, 1, 0);
   if (!Number.isFinite(s.driftExitBlend)) s.driftExitBlend = 0;
+  if (!Number.isFinite(s.yawRateSmoothed)) s.yawRateSmoothed = 0;
   if (!Number.isFinite(s.surfacePitchDeg)) s.surfacePitchDeg = 0;
   if (!Number.isFinite(s.surfaceRollDeg)) s.surfaceRollDeg = 0;
   if (!s.surfaceNormal || typeof s.surfaceNormal !== "object") {
@@ -112,7 +115,9 @@ export function createCarPhysicsState(defOrId, track = null, spawnOpts = {}) {
     drifting: false,
     wasHoldingDrift: false,
     driftGraceTimer: 0,
+    driftState: 0,
     driftExitBlend: 0,
+    yawRateSmoothed: 0,
     brakedFromForward: false,
     brakeStopHoldSec: 0,
     boostCharge: 0,
@@ -186,7 +191,9 @@ export function resetCarPhysicsState(state, track = null, defOrId = null, spawnO
   state.drifting = false;
   state.wasHoldingDrift = false;
   state.driftGraceTimer = 0;
+  state.driftState = 0;
   state.driftExitBlend = 0;
+  state.yawRateSmoothed = 0;
   state.brakedFromForward = false;
   state.brakeStopHoldSec = 0;
   state.boostCharge = 0;
@@ -408,7 +415,8 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
     // Longitudinal forces with progressive touge torque curve (~2.2s 0-100 km/h)
     if (throttle) {
       const speedFrac = clamp(Math.max(0, vForward) / Math.max(1, maxFwd), 0, 1, 0);
-      const accelForce = (def.accel || 34) * (0.48 - 0.15 * speedFrac);
+      const driftDriveBonus = (state.driftState || 0) > 0.25 && Math.abs(state.slip || 0) > 0.2 ? 1.12 : 1.0;
+      const accelForce = (def.accel || 34) * (0.50 - 0.14 * speedFrac) * driftDriveBonus;
       vForward += accelForce * h;
       state.brakedFromForward = false;
       state.brakeStopHoldSec = 0;
@@ -416,7 +424,7 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
 
     if (wantDrift && vForward > 0.2) {
       // Spacebar = mechanical rear handbrake: scrubs forward speed without ever reversing
-      const handbrakeDecel = throttle ? 7.5 : 13.5;
+      const handbrakeDecel = throttle ? 3.2 : 10.5;
       const nextFwd = Math.max(0, vForward - handbrakeDecel * h);
       vForward = nextFwd < 0.06 && !throttle ? 0 : nextFwd;
     }
@@ -452,74 +460,115 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
 
     vForward = clamp(vForward, maxRev, maxFwd, 0);
 
-    // Slip & drift state
+    // Slip & drift state with hysteresis (sustains real touge drift arcs without snapping dead)
     const speedAbs = Math.abs(vForward);
     state.steerSmoothed += (steer - (state.steerSmoothed || 0)) * (1 - Math.exp(-h * 18));
 
-    // Deliberate touge drift initiation: handbrake with steering/slip, or back-heavy flick at speed
-    const driftActive =
-      (wantDrift && vForward > 2.8 && (Math.abs(steer) > 0.05 || Math.abs(vRight) > 1.0)) ||
-      (!brake && Math.abs(steer) > 0.85 && vForward > 20.0 && Math.abs(vRight) > 3.2);
-
-    if (driftActive) {
-      state.driftExitBlend = 1.0;
-    } else {
-      state.driftExitBlend = Math.max(0, (state.driftExitBlend || 0) - 5.2 * h);
-    }
-
     const rawSlip = vForward > 1.2 ? Math.atan2(vRight, vForward) : 0;
+    const absSlip = Math.abs(rawSlip);
+    const steerMag = Math.abs(state.steerSmoothed);
     const driftGrip = clamp(def.driftGrip || 1.0, 0.75, 1.4, 1.0);
 
+    const hbInitiate = wantDrift && vForward > 3.0 && (Math.abs(steer) > 0.05 || absSlip > 0.08);
+    const powerInitiate =
+      vForward > 10.5 && steerMag > 0.55 && (absSlip > 0.14 || (brake && absSlip > 0.10));
+    const sustainDrift =
+      (state.driftState || 0) > 0.25 &&
+      vForward > 4.2 &&
+      absSlip > 0.13 &&
+      (throttle || wantDrift || Math.abs(steer) > 0.12);
+
+    if (hbInitiate) {
+      state.driftState = Math.min(1, (state.driftState || 0) + 16.0 * h);
+    } else if (powerInitiate || sustainDrift) {
+      state.driftState = Math.min(1, (state.driftState || 0) + 9.0 * h);
+    } else {
+      state.driftState = Math.max(0, (state.driftState || 0) - 2.8 * h);
+    }
+    state.driftExitBlend = state.driftState;
+
     // Agile touge steering yaw authority (smooth low-speed ramp prevents endless donuts)
-    const lowSpdRamp = clamp(speedAbs / 7.2, 0, 1, 0);
-    const hiSpdTaper = 1 - 0.16 * clamp((speedAbs - 18.0) / 15.0, 0, 1, 0);
+    const lowSpdRamp = clamp(speedAbs / 5.8, 0, 1, 0);
+    const hiSpdTaper = 1 - 0.14 * clamp((speedAbs - 18.0) / 15.0, 0, 1, 0);
     const dirSign = vForward >= -0.2 ? 1 : -1;
-    const steerBase = (def.steerRate || 2.3) * 0.96;
+    const steerBase = (def.steerRate || 2.25) * 1.04;
     let yawRate = state.steerSmoothed * steerBase * lowSpdRamp * hiSpdTaper * dirSign;
 
-    if (driftActive) {
-      // Back-heavy rear pivot into tight touge hairpins when handbrake/drift is active
-      const hbSpeedFactor = clamp((speedAbs - 6.0) / 14.0, 0, 1, 0);
-      const handbrakeKick = wantDrift ? 1.05 + 0.20 * hbSpeedFactor : 1.15;
-      yawRate *= steer * rawSlip >= 0 ? handbrakeKick : 1.06;
-      // Subtle lateral scrub proportional to slip angle
-      vForward *= 1 - (0.02 + 0.04 * clamp(Math.abs(rawSlip), 0, 1, 0)) * h;
-    }
-
-    // Back-heavy weight balance: rear-axle grip softens on lift-off or power-on cornering
-    let rearGripFactor = 1.0;
-    if (!throttle && !brake && Math.abs(steer) > 0.22 && vForward > 9.0) {
-      rearGripFactor *= 0.72;
-    } else if (throttle && Math.abs(steer) > 0.45 && vForward > 8.0) {
-      rearGripFactor *= 0.84;
-    }
-    const baseLatDamp = 14.2 * rearGripFactor;
-    const driftLatDamp = Math.abs(steer) > 0.05 ? (wantDrift ? 3.25 : 3.65) / driftGrip : 7.8;
-    let latDamping = baseLatDamp + (driftLatDamp - baseLatDamp) * (state.driftExitBlend || 0);
-
-    // Front-wheel caster & counter-steer alignment catch prevents snap spinouts
-    if (steer * rawSlip < -0.02 || (Math.abs(steer) < 0.08 && Math.abs(rawSlip) > 0.08)) {
-      yawRate -= rawSlip * (Math.abs(steer) < 0.08 ? 1.35 : 0.95);
-      latDamping += Math.abs(steer) < 0.08 ? 3.5 : 2.2;
-    }
-
-    if (Math.abs(rawSlip) > 0.58) {
-      const excess = clamp((Math.abs(rawSlip) - 0.58) / (0.86 - 0.58), 0, 1.5, 0);
-      if (steer * rawSlip > 0) {
-        // Softly limit deeper inward oversteer beyond ~33-49 deg
-        yawRate *= Math.max(0.12, 1 - excess * 0.84);
+    // Handbrake rear-swing kick so even a brief Spacebar tap cleanly kicks the tail out
+    if (wantDrift && vForward > 3.0 && Math.abs(steer) > 0.05) {
+      yawRate *= 1.38;
+      if (absSlip < 0.45) {
+        yawRate += Math.sign(steer) * 0.55 * lowSpdRamp;
       }
-      latDamping += 9.5 * excess;
-      yawRate -= Math.sign(rawSlip) * excess * 1.85;
+    }
+
+    if (state.driftState > 0.15 && vForward > 4.0) {
+      if (steer * rawSlip >= 0) {
+        yawRate *= 1 + 0.22 * state.driftState;
+      }
+      if (steer * rawSlip < -0.02) {
+        // Modulate opposite-lock yaw so holding throttle + counter-steer holds a sweeping drift arc
+        yawRate *= throttle ? 0.48 : 0.74;
+      }
+      if (throttle && !brake && absSlip > 0.14 && absSlip < 0.78) {
+        // RWD throttle power-oversteer sustain
+        yawRate += Math.sign(rawSlip) * 0.36 * state.driftState * clamp((0.78 - absSlip) / 0.40, 0, 1, 0);
+      }
+      if (Math.abs(steer) < 0.08 && absSlip > 0.08) {
+        // Gentle caster self-alignment when steering wheel is neutral
+        yawRate -= rawSlip * 0.85;
+      }
+    }
+
+    // Anti-spinout safety envelope beyond ~41-54 deg
+    if (absSlip > 0.72) {
+      const excess = clamp((absSlip - 0.72) / (0.95 - 0.72), 0, 1.5, 0);
+      if (steer * rawSlip > 0) {
+        yawRate *= Math.max(0.10, 1 - excess * 0.88);
+      }
+      yawRate -= Math.sign(rawSlip) * excess * 1.6;
     }
 
     // Rotational yaw inertia so steering & rear weight transitions carry realistic momentum
     state.yawRateSmoothed =
       (state.yawRateSmoothed || 0) + (yawRate - (state.yawRateSmoothed || 0)) * (1 - Math.exp(-h * 11.5));
 
-    // Apply tire grip to lateral velocity BEFORE rotating chassis yaw (preserves true 2D momentum!)
+    // Static vs kinetic lateral grip + energy-preserving centripetal redirection
+    const hardSteerT =
+      clamp((steerMag - 0.25) / 0.30, 0, 1, 0) * clamp((vForward - 7.5) / 4.5, 0, 1, 0);
+    const hardCornerBase = throttle ? 6.8 : 5.8;
+    const baseLatDamp = 12.0 + (hardCornerBase - 12.0) * hardSteerT;
+    const driftLatDamp = wantDrift
+      ? 1.45 / Math.sqrt(driftGrip)
+      : throttle
+      ? 1.75 / Math.sqrt(driftGrip)
+      : 3.2;
+    let latDamping = baseLatDamp + (driftLatDamp - baseLatDamp) * state.driftState;
+    if (absSlip > 0.72) {
+      const excess = clamp((absSlip - 0.72) / (0.95 - 0.72), 0, 1.5, 0);
+      latDamping += 5.5 * excess;
+    }
+
+    // Apply tire grip to lateral velocity BEFORE rotating chassis yaw & redirect damped energy forward
+    const vBefore = Math.hypot(vForward, vRight);
     vRight *= Math.exp(-latDamping * h);
-    if (Math.abs(vRight) < 0.02 && !driftActive) vRight = 0;
+    if (Math.abs(vRight) < 0.02 && state.driftState < 0.1) vRight = 0;
+
+    if (vForward > 0.5 && vBefore > 0.5) {
+      const vAfter = Math.hypot(vForward, vRight);
+      const redirectFrac = 0.88 - 0.10 * state.driftState;
+      const sinSlip = Math.sin(clamp(absSlip, 0, MAX_SLIP_RAD, 0));
+      const scrubRate = 0.14 * sinSlip * sinSlip * (throttle ? 0.55 : 1.15);
+      const targetSpeed = (vAfter + (vBefore - vAfter) * redirectFrac) * (1 - scrubRate * h);
+      const targetFwdSq = targetSpeed * targetSpeed - vRight * vRight;
+      if (targetFwdSq > vForward * vForward) {
+        vForward = Math.min(maxFwd, Math.sqrt(targetFwdSq));
+      } else if (targetSpeed < vAfter && vAfter > 0.01) {
+        const sc = targetSpeed / vAfter;
+        vForward *= sc;
+        vRight *= sc;
+      }
+    }
 
     state.vel.x = vForward * fx + vRight * rx;
     state.vel.z = vForward * fz + vRight * rz;
@@ -552,7 +601,7 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
 
     const slipRad = newVForward > 1.2 ? Math.atan2(newVRight, newVForward) : 0;
     state.slip = clamp(slipRad, -MAX_SLIP_RAD, MAX_SLIP_RAD, 0);
-    state.drifting = !!(driftActive && Math.abs(state.slip) > 0.14 && newVForward > 2.8);
+    state.drifting = !!((state.driftState > 0.25 || wantDrift) && Math.abs(state.slip) > 0.14 && newVForward > 3.0);
 
     // Drift score tracking (boost stays disabled at 0)
     if (state.drifting) {
@@ -639,81 +688,163 @@ export function stepCarPhysics(state, input = {}, dt = FIXED_DT, trackOrOpts = n
 }
 
 /**
- * Elastic pairwise car-to-car collision separation and impulse transfer.
- * Handles dist === 0 safely without NaN.
+ * Exact 2D Oriented Bounding Box (SAT) overlap test between two cars in XZ plane.
+ * Returns null if separated, otherwise { overlap, nx, nz, dx, dz } pointing a -> b.
+ */
+function testCarOBB(a, b) {
+  const yawA = Number.isFinite(a.yaw) ? a.yaw : 0;
+  const yawB = Number.isFinite(b.yaw) ? b.yaw : 0;
+
+  const hwA = clamp((a.def?.width ?? 2.05) * 0.5 + 0.04, 0.6, 2.5, 1.06);
+  const hlA = clamp((a.def?.length ?? 4.30) * 0.5 + 0.05, 1.2, 4.0, 2.20);
+  const hwB = clamp((b.def?.width ?? 2.05) * 0.5 + 0.04, 0.6, 2.5, 1.06);
+  const hlB = clamp((b.def?.length ?? 4.30) * 0.5 + 0.05, 1.2, 4.0, 2.20);
+
+  const dx = b.pos.x - a.pos.x;
+  const dz = b.pos.z - a.pos.z;
+  const maxR = Math.hypot(hwA, hlA) + Math.hypot(hwB, hlB);
+  const distSq = dx * dx + dz * dz;
+  if (distSq >= maxR * maxR) return null;
+
+  const fAx = Math.sin(yawA);
+  const fAz = Math.cos(yawA);
+  const rAx = -fAz;
+  const rAz = fAx;
+
+  const fBx = Math.sin(yawB);
+  const fBz = Math.cos(yawB);
+  const rBx = -fBz;
+  const rBz = fBx;
+
+  let minOverlap = Infinity;
+  let bestNx = rAx;
+  let bestNz = rAz;
+
+  // Test the 4 candidate separating axes: fA, rA, fB, rB
+  for (let k = 0; k < 4; k++) {
+    const ux = k === 0 ? fAx : k === 1 ? rAx : k === 2 ? fBx : rBx;
+    const uz = k === 0 ? fAz : k === 1 ? rAz : k === 2 ? fBz : rBz;
+    const dProj = dx * ux + dz * uz;
+    const radA = hlA * Math.abs(fAx * ux + fAz * uz) + hwA * Math.abs(rAx * ux + rAz * uz);
+    const radB = hlB * Math.abs(fBx * ux + fBz * uz) + hwB * Math.abs(rBx * ux + rBz * uz);
+    const overlap = radA + radB - Math.abs(dProj);
+    if (overlap <= 0) return null;
+    if (overlap < minOverlap) {
+      minOverlap = overlap;
+      const sign = dProj >= 0 ? 1 : -1;
+      bestNx = ux * sign;
+      bestNz = uz * sign;
+    }
+  }
+
+  return { overlap: minOverlap, nx: bestNx, nz: bestNz, dx, dz };
+}
+
+/**
+ * Multi-iteration 2D OBB SAT car-to-car collision separation and impulse transfer.
+ * Handles dist === 0 safely without NaN and clamps against track walls when supplied.
  */
 export function resolveCarCollisions(cars, opts = {}) {
   if (!Array.isArray(cars) || cars.length < 2) return 0;
-  const minDist = Number.isFinite(opts.minDist) ? opts.minDist : 2.45;
-  const restitution = Number.isFinite(opts.restitution) ? opts.restitution : 0.55;
+  const restitution = Number.isFinite(opts.restitution) ? opts.restitution : 0.35;
+  const iterations = clamp(Math.round(opts.iterations ?? 3), 1, 6, 3);
+  const track = opts.track && typeof opts.track.projectToTrack === "function" ? opts.track : null;
+  const pairPulsed = new Set();
   let hits = 0;
 
-  for (let i = 0; i < cars.length; i++) {
-    const a = cars[i];
-    if (!a || !a.pos || !a.vel) continue;
-    for (let j = i + 1; j < cars.length; j++) {
-      const b = cars[j];
-      if (!b || !b.pos || !b.vel) continue;
+  for (let iter = 0; iter < iterations; iter++) {
+    let iterHits = 0;
+    for (let i = 0; i < cars.length; i++) {
+      const a = cars[i];
+      if (!a || !a.pos || !a.vel) continue;
+      for (let j = i + 1; j < cars.length; j++) {
+        const b = cars[j];
+        if (!b || !b.pos || !b.vel) continue;
 
-      // Ignore collisions if vertically separated across an overpass
-      if (Math.abs((a.pos.y || 0) - (b.pos.y || 0)) > 3.0) continue;
+        // Ignore collisions if vertically separated across an overpass
+        if (Math.abs((a.pos.y || 0) - (b.pos.y || 0)) > 3.0) continue;
 
-      let dx = b.pos.x - a.pos.x;
-      let dz = b.pos.z - a.pos.z;
-      let distSq = dx * dx + dz * dz;
-      if (distSq >= minDist * minDist) continue;
+        const col = testCarOBB(a, b);
+        if (!col) continue;
 
-      let nx;
-      let nz;
-      let dist;
-      if (distSq < 1e-8) {
-        const yawA = Number.isFinite(a.yaw) ? a.yaw : 0;
-        nx = Math.cos(yawA);
-        nz = -Math.sin(yawA);
-        dist = 0;
-      } else {
-        dist = Math.sqrt(distSq);
-        nx = dx / dist;
-        nz = dz / dist;
-      }
+        const { nx, nz } = col;
+        const invMa = 1 / clamp(a.def?.mass ?? 1.0, 0.5, 3.0, 1.0);
+        const invMb = 1 / clamp(b.def?.mass ?? 1.0, 0.5, 3.0, 1.0);
+        const invSum = invMa + invMb;
 
-      const invMa = 1 / clamp(a.def?.mass ?? 1.0, 0.5, 3.0, 1.0);
-      const invMb = 1 / clamp(b.def?.mass ?? 1.0, 0.5, 3.0, 1.0);
-      const invSum = invMa + invMb;
+        const push = col.overlap + 0.005;
+        a.pos.x -= nx * push * (invMa / invSum);
+        a.pos.z -= nz * push * (invMa / invSum);
+        b.pos.x += nx * push * (invMb / invSum);
+        b.pos.z += nz * push * (invMb / invSum);
 
-      const overlap = minDist - dist;
-      a.pos.x -= nx * overlap * (invMa / invSum);
-      a.pos.z -= nz * overlap * (invMa / invSum);
-      b.pos.x += nx * overlap * (invMb / invSum);
-      b.pos.z += nz * overlap * (invMb / invSum);
-
-      const relVx = b.vel.x - a.vel.x;
-      const relVz = b.vel.z - a.vel.z;
-      const relVn = relVx * nx + relVz * nz;
-
-      if (relVn < 0) {
-        const impulse = (-(1 + restitution) * relVn) / invSum;
-        a.vel.x -= impulse * invMa * nx;
-        a.vel.z -= impulse * invMa * nz;
-        b.vel.x += impulse * invMb * nx;
-        b.vel.z += impulse * invMb * nz;
-
-        // Refresh scalar forward/lateral readouts
-        for (const car of [a, b]) {
-          const fx = Math.sin(car.yaw);
-          const fz = Math.cos(car.yaw);
-          const rx = -Math.cos(car.yaw);
-          const rz = Math.sin(car.yaw);
-          car.speed = car.vel.x * fx + car.vel.z * fz;
-          car.vLateral = car.vel.x * rx + car.vel.z * rz;
+        // Keep separated cars inside track guardrails so wall-pinches push cleanly inward
+        if (track) {
+          for (const car of [a, b]) {
+            const proj = track.projectToTrack(car.pos.x, car.pos.z, car.trackSampleIdx, car.pos.y);
+            const limit = Math.max(2.0, proj.halfWidth - CAR_RADIUS);
+            if (Math.abs(proj.lateralOffset) > limit) {
+              const sign = proj.lateralOffset > 0 ? 1 : -1;
+              const clampedLat = limit - 0.04;
+              car.pos.x = proj.point.x + proj.right.x * (sign * clampedLat);
+              car.pos.z = proj.point.z + proj.right.z * (sign * clampedLat);
+              car.lateralOffset = sign * clampedLat;
+            }
+          }
         }
 
-        const impactStrength = clamp(-relVn / 18, 0.2, 1.0, 0.35);
-        applyCollision(a, impactStrength, nx, nz);
-        applyCollision(b, impactStrength, -nx, -nz);
-        hits++;
+        const relVx = b.vel.x - a.vel.x;
+        const relVz = b.vel.z - a.vel.z;
+        const relVn = relVx * nx + relVz * nz;
+
+        if (relVn < 0) {
+          const jN = (-(1 + restitution) * relVn) / invSum;
+          const tx = -nz;
+          const tz = nx;
+          const relVt = relVx * tx + relVz * tz;
+          const jT = clamp(-relVt / invSum, -jN * 0.22, jN * 0.22, 0);
+
+          a.vel.x -= (jN * nx + jT * tx) * invMa;
+          a.vel.z -= (jN * nz + jT * tz) * invMa;
+          b.vel.x += (jN * nx + jT * tx) * invMb;
+          b.vel.z += (jN * nz + jT * tz) * invMb;
+
+          // Subtle glancing yaw deflection for off-center bumps
+          const lever = clamp((col.dx * nz - col.dz * nx) / 2.2, -1, 1, 0);
+          const yawKick = clamp(lever * jN * 0.04, -1.4, 1.4, 0);
+          a.yawRateSmoothed = clamp((a.yawRateSmoothed || 0) + yawKick, -6, 6, 0);
+          b.yawRateSmoothed = clamp((b.yawRateSmoothed || 0) + yawKick, -6, 6, 0);
+
+          for (const car of [a, b]) {
+            const spd = Math.hypot(car.vel.x, car.vel.z);
+            if (spd > MAX_TOP_SPEED_MS && spd > 0.01) {
+              const sc = MAX_TOP_SPEED_MS / spd;
+              car.vel.x *= sc;
+              car.vel.z *= sc;
+            }
+            const fx = Math.sin(car.yaw);
+            const fz = Math.cos(car.yaw);
+            const rx = -Math.cos(car.yaw);
+            const rz = Math.sin(car.yaw);
+            car.speed = car.vel.x * fx + car.vel.z * fz;
+            car.vLateral = car.vel.x * rx + car.vel.z * rz;
+            const sRad = car.speed > 1.2 ? Math.atan2(car.vLateral, car.speed) : 0;
+            car.slip = clamp(sRad, -MAX_SLIP_RAD, MAX_SLIP_RAD, 0);
+          }
+
+          const pairKey = i * 1024 + j;
+          if (!pairPulsed.has(pairKey)) {
+            pairPulsed.add(pairKey);
+            const impactStrength = clamp(-relVn / 14, 0.22, 1.0, 0.35);
+            applyCollision(a, impactStrength, nx, nz);
+            applyCollision(b, impactStrength, -nx, -nz);
+            hits++;
+          }
+        }
+        iterHits++;
       }
     }
+    if (iterHits === 0) break;
   }
   return hits;
 }

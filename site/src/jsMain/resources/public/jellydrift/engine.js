@@ -1015,7 +1015,12 @@ export function createJellyDriftEngine(config) {
       updateAds();
 
       if (state.phase === "RACING" && player) {
-        audio.update(speedKmh(player), player.drifting, false);
+        audio.update(
+          speedKmh(player),
+          player.drifting,
+          false,
+          clamp(Math.abs(player.slip || 0) / 0.7, 0.25, 1)
+        );
       } else {
         audio.update(0, false, false);
       }

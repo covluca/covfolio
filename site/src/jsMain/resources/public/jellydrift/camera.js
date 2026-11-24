@@ -130,8 +130,8 @@ export function createCameraRig(THREE, aspect) {
         eyeAnchor.getWorldPosition(desired);
         playerMesh.driverLookTarget.getWorldPosition(look);
       } else {
-        desired.set(px - rx * 0.22 + fx * 0.24, py + 1.03, pz - rz * 0.22 + fz * 0.24);
-        look.set(px + fx * 14.0 - rx * 0.12, py + 0.96, pz + fz * 14.0 - rz * 0.12);
+        desired.set(px - rx * 0.22 + fx * 0.25, py + 1.18, pz - rz * 0.22 + fz * 0.25);
+        look.set(px + fx * 14.0 - rx * 0.12, py + 1.09, pz + fz * 14.0 - rz * 0.12);
       }
 
       // Let the view lead a small amount into a slide without turning the

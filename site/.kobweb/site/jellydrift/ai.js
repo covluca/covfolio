@@ -380,7 +380,7 @@ export function stepAllAI(aiList, dt = FIXED_DT, track = null, player = null) {
   for (let i = 0; i < aiList.length; i++) {
     stepAI(aiList[i], dt, track, { allCars, player, playerProgress: playerProg });
   }
-  resolveCarCollisions(allCars);
+  resolveCarCollisions(allCars, { track });
 }
 
 // Backward-compatible aliases

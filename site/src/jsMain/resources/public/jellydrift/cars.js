@@ -266,8 +266,10 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
 
   const groundClearance = isBuggy ? 0.34 : isHyper ? 0.18 : 0.24;
   const sillTopY = groundClearance + (isBuggy ? 0.44 : isHyper ? 0.32 : 0.38);
-  const roofTopY = isBuggy ? 1.58 : isHyper ? 1.36 : 1.46;
+  const roofTopY = isBuggy ? 1.66 : isHyper ? 1.53 : 1.58;
   const hoodTopY = isBuggy ? 0.88 : isHyper ? 0.64 : 0.74;
+  const eyeY = isBuggy ? 1.24 : isHyper ? 1.14 : 1.18;
+  const eyeZ = 0.25;
 
   // --- 1. Lower Chassis Tub / Floorpan / Sills (Open Interior Cockpit!) ---
   const body = new THREE.Group();
@@ -523,7 +525,8 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
   // --- 4. Open Interior Cockpit: Sculpted Wrap-Around Dash & Recessed Center Console ---
   // The dash cowl sweeps door-to-door with a hard height cap below the driver's
   // sightline so the road stays visible over the hood in DRIVER/HOOD views.
-  const dashTopY = 0.80;
+  const dashTopY = isBuggy ? 0.88 : isHyper ? 0.80 : 0.84;
+  const dashShiftY = dashTopY - 0.80;
   const dashCowl = new THREE.Group();
   dashCowl.name = "dash-cowl";
   jellyChassis.add(dashCowl);
@@ -534,7 +537,7 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
   const cowlPanelGeo = trackGeo(new THREE.BoxGeometry(cowlPanelW, 0.20, 0.36));
   for (const side of [-1, 1]) {
     const panel = new THREE.Mesh(cowlPanelGeo, dashMat);
-    panel.position.set(side * (0.30 + cowlPanelW * 0.5), 0.70, 0.76);
+    panel.position.set(side * (0.30 + cowlPanelW * 0.5), 0.70 + dashShiftY, 0.76);
     panel.rotation.x = -0.30;
     dashCowl.add(panel);
   }
@@ -543,7 +546,7 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
   const cowlWingGeo = trackGeo(new THREE.BoxGeometry(0.30, 0.17, 0.48));
   for (const side of [-1, 1]) {
     const wing = new THREE.Mesh(cowlWingGeo, dashMat);
-    wing.position.set(side * (w * 0.31), 0.66, 0.75);
+    wing.position.set(side * (w * 0.31), 0.66 + dashShiftY, 0.75);
     wing.rotation.set(-0.22, side * 0.42, 0);
     dashCowl.add(wing);
   }
@@ -560,7 +563,7 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
   // Driver instrument binnacle tucked in front of the wheel
   const binnacleGeo = trackGeo(new THREE.BoxGeometry(0.42, 0.08, 0.24));
   const binnacle = new THREE.Mesh(binnacleGeo, dashMat);
-  binnacle.position.set(-0.25, 0.77, 0.66);
+  binnacle.position.set(-0.25, 0.77 + dashShiftY, 0.66);
   binnacle.rotation.x = -0.16;
   dashCowl.add(binnacle);
 
@@ -587,7 +590,7 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
 
   const driverHead = new THREE.Group();
   driverHead.name = "driver-head";
-  driverHead.position.set(-0.25, 1.04, 0.04);
+  driverHead.position.set(-0.25, eyeY, 0.04);
   const helmetGeo = trackGeo(new THREE.SphereGeometry(0.17, 12, 10));
   const helmetMat = trackMat(
     new THREE.MeshStandardMaterial({
@@ -606,9 +609,9 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
   driverHead.add(visor);
   jellyChassis.add(driverHead);
 
-  // Steering Column + Animated Steering Wheel in front of driver eye (-0.25, 1.04, 0.08)
+  // Steering Column + Animated Steering Wheel in front of driver eye
   const steerMount = new THREE.Group();
-  steerMount.position.set(-0.25, 0.86, 0.48);
+  steerMount.position.set(-0.25, isBuggy ? 0.94 : isHyper ? 0.87 : 0.90, 0.48);
   steerMount.rotation.x = 0.45; // tilted back toward driver
   jellyChassis.add(steerMount);
 
@@ -643,23 +646,24 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
   // --- 4b. Recessed Center-Console Infotainment (compact lower-dash bezel angled at driver's eyes) ---
   const displayW = 0.32;
   const displayH = 0.105;
+  const consoleY = eyeY - 0.30;
 
   // Center dash tower / stack face that the display is sunk into
   const centerTowerGeo = trackGeo(new THREE.BoxGeometry(0.40, 0.26, 0.14));
   const centerTower = new THREE.Mesh(centerTowerGeo, dashMat);
-  centerTower.position.set(0.15, 0.68, 0.93);
+  centerTower.position.set(0.15, consoleY - 0.04, 0.96);
   jellyChassis.add(centerTower);
 
   // Neck bridging the console tunnel up to the display housing
   const consoleNeckGeo = trackGeo(new THREE.BoxGeometry(0.34, 0.10, 0.16));
   const consoleNeck = new THREE.Mesh(consoleNeckGeo, dashMat);
-  consoleNeck.position.set(0.12, 0.60, 0.78);
+  consoleNeck.position.set(0.12, consoleY - 0.12, 0.81);
   jellyChassis.add(consoleNeck);
 
   const consoleBezel = new THREE.Group();
   consoleBezel.name = "console-bezel";
-  consoleBezel.position.set(0.16, 0.72, 0.88);
-  consoleBezel.lookAt(-0.22, 1.03, 0.24);
+  consoleBezel.position.set(0.16, consoleY, 0.92);
+  consoleBezel.lookAt(-0.22, eyeY, eyeZ);
   jellyChassis.add(consoleBezel);
 
   // Matte housing sunk into the console stack (four bezel bars + inset screen)
@@ -912,19 +916,19 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
   // Camera anchors on jellyChassis
   const driverEyeAnchor = new THREE.Object3D();
   driverEyeAnchor.name = "driver-eye-anchor";
-  driverEyeAnchor.position.set(-0.25, 1.04, 0.08);
+  driverEyeAnchor.position.set(-0.25, eyeY, 0.12);
   jellyChassis.add(driverEyeAnchor);
 
   // Frozen contract: rigid driver eye frame & look target on carRoot (not jellyChassis) so the
   // DRIVER camera never bounces or aims into the roof ceiling during accel squat / braking dive.
   const driverEyeRootAnchor = new THREE.Object3D();
   driverEyeRootAnchor.name = "driver-eye-root-anchor";
-  driverEyeRootAnchor.position.set(-0.22, 1.03, 0.24);
+  driverEyeRootAnchor.position.set(-0.22, eyeY, eyeZ);
   carRoot.add(driverEyeRootAnchor);
 
   const driverLookTarget = new THREE.Object3D();
   driverLookTarget.name = "driver-look-target";
-  driverLookTarget.position.set(-0.12, 0.96, 14.0);
+  driverLookTarget.position.set(-0.12, eyeY - 0.09, 14.0);
   carRoot.add(driverLookTarget);
 
   const hoodAnchor = new THREE.Object3D();
