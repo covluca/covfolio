@@ -98,13 +98,16 @@ internal fun GameButton(
     val currentEnabled = rememberUpdatedState(enabled)
     Div(
         modifier
-            .padding(topBottom = 0.55.cssRem, leftRight = 1.05.cssRem)
-            .borderRadius(10.px)
+            .padding(topBottom = 0.65.cssRem, leftRight = 1.1.cssRem)
+            .borderRadius(12.px)
             .backgroundColor(if (accent) ACCENT_YELLOW else CARD_BG)
-            .border(1.px, LineStyle.Solid, if (accent) ACCENT_YELLOW else rgba(255, 255, 255, 0.2f))
+            .border(1.px, LineStyle.Solid, if (accent) ACCENT_YELLOW else rgba(255, 255, 255, 0.18f))
             .pointerEvents(PointerEvents.Auto)
             .cursor(if (enabled) Cursor.Pointer else Cursor.NotAllowed)
             .styleModifier {
+                property("box-sizing", "border-box")
+                property("letter-spacing", "0.04em")
+                if (accent && enabled) property("box-shadow", "0 8px 24px rgba(243,219,91,0.28)")
                 property("text-align", "center")
                 property("user-select", "none")
                 property("touch-action", "none")
@@ -159,21 +162,30 @@ private fun SelectCard(
     onSelect: () -> Unit,
     widthPx: Int,
     subtitle: String? = null,
+    fill: Boolean = false,
 ) {
     val currentOnSelect = rememberUpdatedState(onSelect)
     Div(
-        Modifier
-            .width(widthPx.px)
-            .padding(topBottom = 8.px, leftRight = 8.px)
-            .borderRadius(10.px)
-            .backgroundColor(if (selected) Color.rgb(0x24304A) else CARD_BG)
-            .border(2.px, LineStyle.Solid, if (selected) ACCENT_YELLOW else rgba(255, 255, 255, 0.14f))
+        (if (fill) Modifier.fillMaxWidth() else Modifier.width(widthPx.px))
+            .padding(topBottom = 9.px, leftRight = 10.px)
+            .borderRadius(12.px)
+            .backgroundColor(if (selected) rgba(243, 219, 91, 0.13f) else CARD_BG)
+            .border(1.5.px, LineStyle.Solid, if (selected) ACCENT_YELLOW else rgba(255, 255, 255, 0.10f))
             .pointerEvents(PointerEvents.Auto)
             .cursor(Cursor.Pointer)
             .styleModifier {
+                property("display", "flex")
+                property("flex-direction", "column")
+                property("justify-content", "center")
+                property("align-items", "center")
+                property("gap", "2px")
+                property("min-height", "38px")
+                property("box-sizing", "border-box")
                 property("text-align", "center")
                 property("user-select", "none")
                 property("touch-action", "none")
+                property("transition", "background 120ms, border-color 120ms, transform 120ms")
+                if (selected) property("box-shadow", "0 0 0 3px rgba(243,219,91,0.12), 0 6px 18px rgba(243,219,91,0.10)")
             }
             .toAttrs {
                 attr("data-testid", testId)
@@ -201,41 +213,65 @@ private fun SelectCard(
                 }
             }
     ) {
-        SpanText(
-            label,
-            modifier = Modifier
-                .fontFamily(Fonts.Space_Grotesk)
-                .fontSize(0.76.cssRem)
-                .fontWeight(FontWeight.Bold)
-                .color(if (selected) ACCENT_YELLOW else Colors.White)
-                .textAlign(TextAlign.Center)
-        )
-        if (subtitle != null) {
+        Div(Modifier.toAttrs()) {
             SpanText(
-                subtitle,
+                label,
                 modifier = Modifier
-                    .margin(top = 2.px)
-                    .fontFamily(Fonts.DM_SANS)
-                    .fontSize(0.60.cssRem)
-                    .color(Colors.LightGray)
+                    .fontFamily(Fonts.Space_Grotesk)
+                    .fontSize(0.86.cssRem)
+                    .fontWeight(FontWeight.Bold)
+                    .color(if (selected) ACCENT_YELLOW else Colors.White)
                     .textAlign(TextAlign.Center)
             )
+        }
+        if (subtitle != null) {
+            Div(Modifier.toAttrs()) {
+                SpanText(
+                    subtitle,
+                    modifier = Modifier
+                        .fontFamily(Fonts.DM_SANS)
+                        .fontSize(0.68.cssRem)
+                        .color(Color.rgb(0x9AA6B8))
+                        .textAlign(TextAlign.Center)
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun SectionLabel(text: String) {
-    SpanText(
-        text,
-        modifier = Modifier
-            .margin(bottom = 4.px)
-            .fontFamily(Fonts.Space_Grotesk)
-            .fontSize(0.68.cssRem)
-            .fontWeight(FontWeight.Bold)
-            .color(Colors.LightGray)
-            .styleModifier { property("letter-spacing", "0.16em") }
-    )
+    Div(
+        Modifier
+            .margin(bottom = 2.px)
+            .toAttrs()
+    ) {
+        SpanText(
+            text,
+            modifier = Modifier
+                .fontFamily(Fonts.Space_Grotesk)
+                .fontSize(0.70.cssRem)
+                .fontWeight(FontWeight.Bold)
+                .color(Color.rgb(0x8793A6))
+                .styleModifier { property("letter-spacing", "0.18em") }
+        )
+    }
+}
+
+@Composable
+private fun CardGrid(cols: Int, content: @Composable () -> Unit) {
+    Div(
+        Modifier
+            .fillMaxWidth()
+            .styleModifier {
+                property("display", "grid")
+                property("grid-template-columns", "repeat($cols, minmax(0, 1fr))")
+                property("gap", "8px")
+            }
+            .toAttrs()
+    ) {
+        content()
+    }
 }
 
 @Composable
@@ -243,33 +279,35 @@ private fun StatBar(label: String, value: Double) {
     val fillPct = ((value / 10.0) * 100.0).toInt().coerceIn(0, 100)
     Row(
         modifier = Modifier
-            .width(148.px)
-            .gap(6.px),
+            .fillMaxWidth()
+            .gap(8.px),
         verticalAlignment = Alignment.CenterVertically
     ) {
         SpanText(
             label,
             modifier = Modifier
-                .width(56.px)
+                .width(58.px)
                 .fontFamily(Fonts.DM_SANS)
-                .fontSize(0.62.cssRem)
-                .color(Colors.LightGray)
+                .fontSize(0.70.cssRem)
+                .color(Color.rgb(0x9AA6B8))
         )
         Div(
             Modifier
-                .height(5.px)
+                .height(6.px)
                 .borderRadius(3.px)
-                .backgroundColor(rgba(255, 255, 255, 0.14f))
+                .backgroundColor(rgba(255, 255, 255, 0.10f))
                 .overflow(Overflow.Hidden)
                 .styleModifier { property("flex", "1") }
                 .toAttrs()
         ) {
             Div(
                 Modifier
-                    .height(5.px)
+                    .height(6.px)
                     .borderRadius(3.px)
-                    .backgroundColor(ACCENT_YELLOW)
-                    .styleModifier { property("width", "$fillPct%") }
+                    .styleModifier {
+                        property("width", "$fillPct%")
+                        property("background", "linear-gradient(90deg, #F3DB5B, #FFB020)")
+                    }
                     .toAttrs()
             )
         }
@@ -279,42 +317,39 @@ private fun StatBar(label: String, value: Double) {
 @Composable
 private fun CarStatsPanel(carId: String) {
     val stats = CAR_STATS[carId] ?: return
-    Column(
-        modifier = Modifier
-            .padding(topBottom = 6.px, leftRight = 10.px)
-            .gap(4.px)
-            .borderRadius(10.px)
-            .backgroundColor(rgba(12, 17, 25, 0.72f))
-            .border(1.px, LineStyle.Solid, rgba(255, 255, 255, 0.12f)),
-        horizontalAlignment = Alignment.CenterHorizontally
+    Div(
+        Modifier
+            .fillMaxWidth()
+            .padding(topBottom = 10.px, leftRight = 12.px)
+            .borderRadius(12.px)
+            .backgroundColor(rgba(255, 255, 255, 0.04f))
+            .border(1.px, LineStyle.Solid, rgba(255, 255, 255, 0.08f))
+            .styleModifier {
+                property("display", "grid")
+                property("grid-template-columns", "repeat(2, minmax(0, 1fr))")
+                property("gap", "8px 16px")
+                property("box-sizing", "border-box")
+            }
+            .toAttrs()
     ) {
-        Row(
-            modifier = Modifier.gap(10.px),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            StatBar(STAT_LABELS[0], stats[0])
-            StatBar(STAT_LABELS[1], stats[1])
-        }
-        Row(
-            modifier = Modifier.gap(10.px),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            StatBar(STAT_LABELS[2], stats[2])
-            StatBar(STAT_LABELS[3], stats[3])
+        for (i in STAT_LABELS.indices) {
+            StatBar(STAT_LABELS[i], stats[i])
         }
     }
 }
 
 @Composable
 private fun ControlsHint() {
-    SpanText(
-        "WASD/Arrows · Space Drift/Handbrake · C Camera · V Hood · Esc Pause",
-        modifier = Modifier
-            .fontFamily(Fonts.DM_SANS)
-            .fontSize(0.6.cssRem)
-            .color(Colors.LightGray)
-            .textAlign(TextAlign.Center)
-    )
+    Div(Modifier.fillMaxWidth().toAttrs()) {
+        SpanText(
+            "WASD / Arrows drive  ·  Space handbrake  ·  C camera  ·  Esc pause",
+            modifier = Modifier
+                .fontFamily(Fonts.DM_SANS)
+                .fontSize(0.66.cssRem)
+                .color(Color.rgb(0x7C8799))
+                .textAlign(TextAlign.Center)
+        )
+    }
 }
 
 @Composable
@@ -322,147 +357,179 @@ fun GarageMenu(
     snapshot: JellyDriftSnapshot,
     bridge: JellyDriftBridge,
 ) {
-    Column(
-        modifier = Modifier
+    Div(
+        Modifier
             .position(Position.Absolute)
-            .top(30.px)
-            .left(0.px)
-            .right(0.px)
-            .padding(leftRight = 10.px)
-            .pointerEvents(PointerEvents.None)
-            .styleModifier { property("align-items", "center") },
-        horizontalAlignment = Alignment.CenterHorizontally
+            .top(52.px)
+            .left(16.px)
+            .bottom(118.px)
+            .width(380.px)
+            .borderRadius(20.px)
+            .backgroundColor(rgba(9, 13, 21, 0.80f))
+            .border(1.px, LineStyle.Solid, rgba(255, 255, 255, 0.14f))
+            .pointerEvents(PointerEvents.Auto)
+            .styleModifier {
+                property("max-width", "calc(100vw - 32px)")
+                property("display", "flex")
+                property("flex-direction", "column")
+                property("overflow", "hidden")
+                property("box-sizing", "border-box")
+                property("backdrop-filter", "blur(16px)")
+                property("-webkit-backdrop-filter", "blur(16px)")
+                property("box-shadow", "0 22px 70px rgba(0,0,0,0.55)")
+            }
+            .toAttrs { attr("data-testid", "garage-panel") }
     ) {
-        SpanText(
-            "JELLY DRIFT 3D",
-            modifier = Modifier
-                .fontFamily(Fonts.Space_Grotesk)
-                .fontSize(1.65.cssRem)
-                .fontWeight(FontWeight.Bold)
-                .color(ACCENT_YELLOW)
-                .styleModifier { property("text-shadow", "0 4px 24px rgba(243,219,91,0.25)") }
-        )
-        SpanText(
-            "1v1 mountain pass touge. Handbrake into hairpins, link drifts to multiply score.",
-            modifier = Modifier
-                .margin(top = 2.px, bottom = 8.px)
-                .fontFamily(Fonts.DM_SANS)
-                .fontSize(0.75.cssRem)
-                .color(Colors.LightGray)
-                .textAlign(TextAlign.Center)
-        )
-
-        SectionLabel("CIRCUIT")
-        Row(
-            modifier = Modifier
-                .gap(6.px)
+        // Scrollable body
+        Div(
+            Modifier
+                .padding(topBottom = 16.px, leftRight = 16.px)
                 .styleModifier {
-                    property("flex-wrap", "wrap")
-                    property("justify-content", "center")
-                },
-            verticalAlignment = Alignment.CenterVertically
+                    property("flex", "1 1 auto")
+                    property("min-height", "0")
+                    property("overflow-y", "auto")
+                    property("display", "flex")
+                    property("flex-direction", "column")
+                    property("gap", "14px")
+                    property("scrollbar-width", "thin")
+                    property("scrollbar-color", "rgba(255,255,255,0.25) transparent")
+                }
+                .toAttrs()
         ) {
-            for ((id, label) in TRACKS) {
-                SelectCard(
-                    testId = "track-$id",
-                    attrName = "data-track-id",
-                    value = id,
-                    label = label,
-                    selected = snapshot.trackId == id,
-                    onSelect = { bridge.selectTrack(id) },
-                    widthPx = 110,
-                    subtitle = TRACK_SUBTITLES[id],
-                )
+            Div(Modifier.toAttrs()) {
+                Div(Modifier.toAttrs()) {
+                    SpanText(
+                        "JELLY DRIFT 3D",
+                        modifier = Modifier
+                            .fontFamily(Fonts.Space_Grotesk)
+                            .fontSize(1.55.cssRem)
+                            .fontWeight(FontWeight.Bold)
+                            .color(ACCENT_YELLOW)
+                            .styleModifier {
+                                property("letter-spacing", "0.04em")
+                                property("text-shadow", "0 4px 24px rgba(243,219,91,0.30)")
+                            }
+                    )
+                }
+                Div(Modifier.margin(top = 3.px).toAttrs()) {
+                    SpanText(
+                        "Mountain-pass touge. Handbrake into hairpins, chain drifts to multiply your score.",
+                        modifier = Modifier
+                            .fontFamily(Fonts.DM_SANS)
+                            .fontSize(0.76.cssRem)
+                            .color(Color.rgb(0xA3AEC0))
+                    )
+                }
+            }
+
+            Div(Modifier.toAttrs()) {
+                SectionLabel("CIRCUIT")
+                CardGrid(2) {
+                    for ((id, label) in TRACKS) {
+                        SelectCard(
+                            testId = "track-$id",
+                            attrName = "data-track-id",
+                            value = id,
+                            label = label,
+                            selected = snapshot.trackId == id,
+                            onSelect = { bridge.selectTrack(id) },
+                            widthPx = 110,
+                            subtitle = TRACK_SUBTITLES[id],
+                            fill = true,
+                        )
+                    }
+                }
+            }
+
+            Div(Modifier.toAttrs()) {
+                SectionLabel("JELLY CAR")
+                CardGrid(2) {
+                    for ((id, label) in CARS) {
+                        SelectCard(
+                            testId = "car-$id",
+                            attrName = "data-car-id",
+                            value = id,
+                            label = label,
+                            selected = snapshot.carId == id,
+                            onSelect = { bridge.selectCar(id) },
+                            widthPx = 104,
+                            fill = true,
+                        )
+                    }
+                }
+                Div(Modifier.height(8.px).toAttrs())
+                CarStatsPanel(snapshot.carId)
+            }
+
+            Div(Modifier.toAttrs()) {
+                SectionLabel("MODE")
+                CardGrid(2) {
+                    for ((mode, label) in MODES) {
+                        SelectCard(
+                            testId = "mode-${mode.name}",
+                            attrName = "data-mode-id",
+                            value = mode.name,
+                            label = label,
+                            selected = snapshot.mode == mode,
+                            onSelect = { bridge.selectMode(mode) },
+                            widthPx = 112,
+                            fill = true,
+                        )
+                    }
+                }
+            }
+
+            Div(Modifier.toAttrs()) {
+                SectionLabel("DIFFICULTY")
+                CardGrid(3) {
+                    for ((diff, label, sub) in DIFFICULTIES) {
+                        SelectCard(
+                            testId = "diff-${diff.name}",
+                            attrName = "data-difficulty-id",
+                            value = diff.name,
+                            label = label,
+                            selected = snapshot.difficulty == diff,
+                            onSelect = { bridge.selectDifficulty(diff) },
+                            widthPx = 94,
+                            subtitle = sub,
+                            fill = true,
+                        )
+                    }
+                }
             }
         }
 
-        Div(Modifier.height(8.px).toAttrs())
-        SectionLabel("JELLY CAR")
-        Row(
-            modifier = Modifier
-                .gap(6.px)
+        // Pinned footer with primary actions
+        Div(
+            Modifier
+                .padding(topBottom = 12.px, leftRight = 16.px)
+                .backgroundColor(rgba(6, 9, 15, 0.55f))
                 .styleModifier {
-                    property("flex-wrap", "wrap")
-                    property("justify-content", "center")
-                },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            for ((id, label) in CARS) {
-                SelectCard(
-                    testId = "car-$id",
-                    attrName = "data-car-id",
-                    value = id,
-                    label = label,
-                    selected = snapshot.carId == id,
-                    onSelect = { bridge.selectCar(id) },
-                    widthPx = 104,
-                )
-            }
-        }
-
-        Div(Modifier.height(6.px).toAttrs())
-        SectionLabel("MODE & DIFFICULTY")
-        Row(
-            modifier = Modifier
-                .gap(8.px)
-                .styleModifier {
-                    property("flex-wrap", "wrap")
-                    property("justify-content", "center")
-                },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            for ((mode, label) in MODES) {
-                SelectCard(
-                    testId = "mode-${mode.name}",
-                    attrName = "data-mode-id",
-                    value = mode.name,
-                    label = label,
-                    selected = snapshot.mode == mode,
-                    onSelect = { bridge.selectMode(mode) },
-                    widthPx = 112,
-                )
-            }
-            for ((diff, label, sub) in DIFFICULTIES) {
-                SelectCard(
-                    testId = "diff-${diff.name}",
-                    attrName = "data-difficulty-id",
-                    value = diff.name,
-                    label = label,
-                    selected = snapshot.difficulty == diff,
-                    onSelect = { bridge.selectDifficulty(diff) },
-                    widthPx = 94,
-                    subtitle = sub,
-                )
-            }
-        }
-
-        Div(Modifier.height(6.px).toAttrs())
-        CarStatsPanel(snapshot.carId)
-
-        Div(Modifier.height(5.px).toAttrs())
-        ControlsHint()
-
-        Div(Modifier.height(8.px).toAttrs())
-        Row(
-            modifier = Modifier.gap(10.px),
-            verticalAlignment = Alignment.CenterVertically
+                    property("flex", "0 0 auto")
+                    property("border-top", "1px solid rgba(255,255,255,0.10)")
+                    property("display", "flex")
+                    property("flex-direction", "column")
+                    property("gap", "8px")
+                }
+                .toAttrs()
         ) {
             GameButton(
                 testId = "start-race-btn",
                 label = "START RACE",
                 onClick = { bridge.startRace(snapshot.trackId, snapshot.carId, snapshot.mode, snapshot.difficulty) },
                 accent = true,
-                fontSizeRem = 0.92,
-                modifier = Modifier.width(176.px),
+                fontSizeRem = 1.0,
+                modifier = Modifier.fillMaxWidth().padding(topBottom = 4.px),
             )
             GameButton(
                 testId = "open-mp-btn",
-                label = if (snapshot.mp.inRoom) "ROOM ${snapshot.mp.roomCode}" else "MULTIPLAYER (2-4P)",
+                label = if (snapshot.mp.inRoom) "ROOM ${snapshot.mp.roomCode}" else "MULTIPLAYER  (2-4 PLAYERS)",
                 onClick = { bridge.mpOpenLobby() },
                 accent = false,
-                fontSizeRem = 0.85,
-                modifier = Modifier.width(196.px),
+                fontSizeRem = 0.84,
+                modifier = Modifier.fillMaxWidth(),
             )
+            ControlsHint()
         }
     }
 }
@@ -955,11 +1022,14 @@ internal fun MenuCard(content: @Composable () -> Unit) {
             .margin(12.px)
             .padding(20.px)
             .gap(10.px)
-            .borderRadius(16.px)
-            .backgroundColor(MODAL_BG)
-            .border(1.px, LineStyle.Solid, rgba(255, 255, 255, 0.18f))
+            .borderRadius(20.px)
+            .backgroundColor(rgba(9, 13, 21, 0.86f))
+            .border(1.px, LineStyle.Solid, rgba(255, 255, 255, 0.16f))
             .pointerEvents(PointerEvents.Auto)
-            .styleModifier { property("box-shadow", "0 24px 80px rgba(0,0,0,0.55)") },
+            .styleModifier {
+                property("backdrop-filter", "blur(16px)")
+                property("box-shadow", "0 24px 80px rgba(0,0,0,0.55)")
+            },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         content()
