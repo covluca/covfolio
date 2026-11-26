@@ -172,7 +172,7 @@ fun JellyDriftHud(
                     .toAttrs()
             ) {
                 SpanText(
-                    "P${snapshot.position}/${snapshot.aiCount + 1}",
+                    "P${snapshot.position}/${snapshot.totalRacers}",
                     modifier = Modifier
                         .fontFamily(Res.Fonts.Space_Grotesk)
                         .fontSize(0.88.cssRem)
@@ -181,7 +181,13 @@ fun JellyDriftHud(
                 )
             }
             val gap = snapshot.rivalGapMeters.toInt()
-            val gapText = "VS ${snapshot.rivalName} (${snapshot.difficulty.name}) ${if (gap >= 0) "+$gap" else "$gap"}m"
+            val gapSign = if (gap >= 0) "+$gap" else "$gap"
+            val gapText = if (snapshot.mp.inRoom) {
+                val modeTag = if (snapshot.mp.collisions) "CONTACT" else "GHOST"
+                "ONLINE · $modeTag · VS ${snapshot.rivalName} ${gapSign}m"
+            } else {
+                "VS ${snapshot.rivalName} (${snapshot.difficulty.name}) ${gapSign}m"
+            }
             Div(
                 Modifier
                     .margin(left = 8.px)
@@ -390,13 +396,39 @@ fun JellyDriftHud(
 @Composable
 private fun MinimapOverlay(snapshot: JellyDriftSnapshot) {
     var pathEl by remember { mutableStateOf<Element?>(null) }
-    var rivalDot by remember { mutableStateOf<Element?>(null) }
+    var rivalDots by remember { mutableStateOf<List<Element>>(emptyList()) }
     var playerDot by remember { mutableStateOf<Element?>(null) }
 
     SideEffect {
         pathEl?.setAttribute("d", snapshot.minimapPath)
-        rivalDot?.setAttribute("cx", snapshot.rivalMapX.toString())
-        rivalDot?.setAttribute("cy", snapshot.rivalMapY.toString())
+        val dots = rivalDots
+        val mapList = snapshot.rivalsMap
+        if (mapList.isNotEmpty()) {
+            for (i in dots.indices) {
+                val el = dots[i]
+                if (i < mapList.size) {
+                    val d = mapList[i]
+                    el.setAttribute("cx", d.x.toString())
+                    el.setAttribute("cy", d.y.toString())
+                    el.setAttribute("fill", d.color)
+                    el.setAttribute("visibility", "visible")
+                } else {
+                    el.setAttribute("visibility", "hidden")
+                }
+            }
+        } else {
+            for (i in dots.indices) {
+                val el = dots[i]
+                if (i == 0) {
+                    el.setAttribute("cx", snapshot.rivalMapX.toString())
+                    el.setAttribute("cy", snapshot.rivalMapY.toString())
+                    el.setAttribute("fill", "#38BDF8")
+                    el.setAttribute("visibility", "visible")
+                } else {
+                    el.setAttribute("visibility", "hidden")
+                }
+            }
+        }
         playerDot?.setAttribute("cx", snapshot.playerMapX.toString())
         playerDot?.setAttribute("cy", snapshot.playerMapY.toString())
     }
@@ -431,12 +463,20 @@ private fun MinimapOverlay(snapshot: JellyDriftSnapshot) {
                     trackOutline.setAttribute("stroke-width", "5")
                     trackOutline.setAttribute("stroke-linecap", "round")
                     trackOutline.setAttribute("stroke-linejoin", "round")
+                    svg.appendChild(trackOutline)
 
-                    val rival = document.createElementNS(svgNs, "circle")
-                    rival.setAttribute("r", "4.8")
-                    rival.setAttribute("fill", "#38BDF8")
-                    rival.setAttribute("stroke", "#0F172A")
-                    rival.setAttribute("stroke-width", "1.5")
+                    val createdRivals = mutableListOf<Element>()
+                    val defaultColors = listOf("#38BDF8", "#FB923C", "#C084FC")
+                    for (i in 0 until 3) {
+                        val rival = document.createElementNS(svgNs, "circle")
+                        rival.setAttribute("r", "4.8")
+                        rival.setAttribute("fill", defaultColors[i])
+                        rival.setAttribute("stroke", "#0F172A")
+                        rival.setAttribute("stroke-width", "1.5")
+                        rival.setAttribute("visibility", if (i == 0) "visible" else "hidden")
+                        svg.appendChild(rival)
+                        createdRivals.add(rival)
+                    }
 
                     val player = document.createElementNS(svgNs, "circle")
                     player.setAttribute("r", "5.5")
@@ -444,18 +484,16 @@ private fun MinimapOverlay(snapshot: JellyDriftSnapshot) {
                     player.setAttribute("stroke", "#FFFFFF")
                     player.setAttribute("stroke-width", "1.6")
 
-                    svg.appendChild(trackOutline)
-                    svg.appendChild(rival)
                     svg.appendChild(player)
                     host.appendChild(svg)
 
                     pathEl = trackOutline
-                    rivalDot = rival
+                    rivalDots = createdRivals
                     playerDot = player
 
                     onDispose {
                         pathEl = null
-                        rivalDot = null
+                        rivalDots = emptyList()
                         playerDot = null
                         if (svg.parentNode === host) {
                             host.removeChild(svg)

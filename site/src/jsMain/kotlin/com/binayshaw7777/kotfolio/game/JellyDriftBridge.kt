@@ -84,6 +84,48 @@ data class AdSlotsSnapshotDto(
     val tracksideCount: Int = 0
 )
 
+data class RivalDotDto(
+    val x: Double = 50.0,
+    val y: Double = 50.0,
+    val color: String = "#38BDF8"
+)
+
+data class MpPlayerDto(
+    val uid: String = "",
+    val name: String = "Racer",
+    val carId: String = "jelly_gt",
+    val slot: Int = 0,
+    val ready: Boolean = true,
+    val isHost: Boolean = false,
+    val isMe: Boolean = false,
+    val transport: String = "relay",
+    val finishedAtMs: Long = 0L,
+    val driftScore: Int = 0,
+    val bestLapSec: Double = 0.0,
+    val position: Int = 1
+)
+
+data class MpStateDto(
+    val open: Boolean = false,
+    val inRoom: Boolean = false,
+    val connected: Boolean = false,
+    val connecting: Boolean = false,
+    val statusText: String = "",
+    val errorText: String = "",
+    val roomCode: String = "",
+    val isHost: Boolean = false,
+    val isPublic: Boolean = false,
+    val collisions: Boolean = false,
+    val roomStatus: String = "LOBBY",
+    val trackId: String = "sunny_coast",
+    val mode: String = "GRAND_PRIX",
+    val totalLaps: Int = 3,
+    val myUid: String = "",
+    val callsign: String = "Racer",
+    val transport: String = "offline",
+    val players: List<MpPlayerDto> = emptyList()
+)
+
 data class JellyDriftSnapshot(
     val ready: Boolean = false,
     val phase: GamePhase = GamePhase.GARAGE,
@@ -109,6 +151,7 @@ data class JellyDriftSnapshot(
     val playerMapY: Double = 50.0,
     val rivalMapX: Double = 50.0,
     val rivalMapY: Double = 50.0,
+    val rivalsMap: List<RivalDotDto> = emptyList(),
     val boostCharge: Double = 0.0,
     val boostTier: Int = 0,
     val lap: Int = 1,
@@ -120,10 +163,12 @@ data class JellyDriftSnapshot(
     val continuesUsed: Int = 0,
     val position: Int = 1,
     val aiCount: Int = 1,
+    val totalRacers: Int = 2,
     val countdown: Double = 0.0,
     val playerWorldPos: PlayerWorldPosDto = PlayerWorldPosDto(),
     val jellySpring: JellySpringDto = JellySpringDto(),
     val adSlots: AdSlotsSnapshotDto = AdSlotsSnapshotDto(),
+    val mp: MpStateDto = MpStateDto(),
     val fps: Double = 0.0,
     val fatalErrors: List<String> = emptyList()
 )
@@ -190,6 +235,81 @@ fun parseSnapshot(raw: dynamic): JellyDriftSnapshot {
         }
     }
 
+    val rivalsMapList = mutableListOf<RivalDotDto>()
+    val rawRivalsMap = raw.rivalsMap
+    if (rawRivalsMap != null && rawRivalsMap != undefined) {
+        val len = (rawRivalsMap.length as? Number)?.toInt() ?: 0
+        for (i in 0 until len) {
+            val item = rawRivalsMap[i]
+            if (item != null && item != undefined) {
+                rivalsMapList.add(
+                    RivalDotDto(
+                        x = asDoubleOr(item.x, 50.0),
+                        y = asDoubleOr(item.y, 50.0),
+                        color = asStringOr(item.color, "#38BDF8")
+                    )
+                )
+            }
+        }
+    }
+
+    val rawMp = raw.mp
+    val mpPlayersList = mutableListOf<MpPlayerDto>()
+    if (rawMp != null && rawMp != undefined) {
+        val rawPlayers = rawMp.players
+        if (rawPlayers != null && rawPlayers != undefined) {
+            val len = (rawPlayers.length as? Number)?.toInt() ?: 0
+            for (i in 0 until len) {
+                val p = rawPlayers[i]
+                if (p != null && p != undefined) {
+                    mpPlayersList.add(
+                        MpPlayerDto(
+                            uid = asStringOr(p.uid, ""),
+                            name = asStringOr(p.name, "Racer"),
+                            carId = asStringOr(p.carId, "jelly_gt"),
+                            slot = asIntOr(p.slot, 0),
+                            ready = asBoolOr(p.ready, true),
+                            isHost = asBoolOr(p.isHost, false),
+                            isMe = asBoolOr(p.isMe, false),
+                            transport = asStringOr(p.transport, "relay"),
+                            finishedAtMs = (p.finishedAtMs as? Number)?.toLong() ?: 0L,
+                            driftScore = asIntOr(p.driftScore, 0),
+                            bestLapSec = asDoubleOr(p.bestLapSec, 0.0),
+                            position = asIntOr(p.position, 1)
+                        )
+                    )
+                }
+            }
+        }
+    }
+    val mpState = if (rawMp != null && rawMp != undefined) {
+        MpStateDto(
+            open = asBoolOr(rawMp.open, false),
+            inRoom = asBoolOr(rawMp.inRoom, false),
+            connected = asBoolOr(rawMp.connected, false),
+            connecting = asBoolOr(rawMp.connecting, false),
+            statusText = asStringOr(rawMp.statusText, ""),
+            errorText = asStringOr(rawMp.errorText, ""),
+            roomCode = asStringOr(rawMp.roomCode, ""),
+            isHost = asBoolOr(rawMp.isHost, false),
+            isPublic = asBoolOr(rawMp.isPublic, false),
+            collisions = asBoolOr(rawMp.collisions, false),
+            roomStatus = asStringOr(rawMp.roomStatus, "LOBBY"),
+            trackId = asStringOr(rawMp.trackId, "sunny_coast"),
+            mode = asStringOr(rawMp.mode, "GRAND_PRIX"),
+            totalLaps = asIntOr(rawMp.totalLaps, 3),
+            myUid = asStringOr(rawMp.myUid, ""),
+            callsign = asStringOr(rawMp.callsign, "Racer"),
+            transport = asStringOr(rawMp.transport, "offline"),
+            players = mpPlayersList
+        )
+    } else {
+        MpStateDto()
+    }
+
+    val parsedAiCount = asIntOr(raw.aiCount, 1)
+    val parsedTotalRacers = asIntOr(raw.totalRacers, maxOf(parsedAiCount + 1, mpPlayersList.size.coerceAtLeast(2)))
+
     return JellyDriftSnapshot(
         ready = asBoolOr(raw.ready, false),
         phase = enumValueOrDefault(raw.phase, GamePhase.GARAGE),
@@ -215,6 +335,7 @@ fun parseSnapshot(raw: dynamic): JellyDriftSnapshot {
         playerMapY = asDoubleOr(raw.playerMapY, 50.0),
         rivalMapX = asDoubleOr(raw.rivalMapX, 50.0),
         rivalMapY = asDoubleOr(raw.rivalMapY, 50.0),
+        rivalsMap = rivalsMapList,
         boostCharge = asDoubleOr(raw.boostCharge, 0.0),
         boostTier = asIntOr(raw.boostTier, 0),
         lap = asIntOr(raw.lap, 1),
@@ -233,7 +354,8 @@ fun parseSnapshot(raw: dynamic): JellyDriftSnapshot {
         timeRemainingSec = asDoubleOr(raw.timeRemainingSec, 0.0),
         continuesUsed = asIntOr(raw.continuesUsed, 0),
         position = asIntOr(raw.position, 1),
-        aiCount = asIntOr(raw.aiCount, 1),
+        aiCount = parsedAiCount,
+        totalRacers = parsedTotalRacers,
         countdown = asDoubleOr(raw.countdown, 0.0),
         playerWorldPos = if (pos != null && pos != undefined) {
             PlayerWorldPosDto(
@@ -269,6 +391,7 @@ fun parseSnapshot(raw: dynamic): JellyDriftSnapshot {
         } else {
             AdSlotsSnapshotDto()
         },
+        mp = mpState,
         fps = asDoubleOr(raw.fps, 0.0),
         fatalErrors = errorsList
     )
@@ -464,6 +587,50 @@ class JellyDriftBridge {
 
     fun confirmUiPhase(phase: GamePhase) {
         runCatching { controller?.confirmUiPhase(phase.name) }
+    }
+
+    fun mpOpenLobby() {
+        runCatching { controller?.mpOpenLobby() }
+    }
+
+    fun mpCloseLobby() {
+        runCatching { controller?.mpCloseLobby() }
+    }
+
+    fun mpSetCallsign(name: String) {
+        runCatching { controller?.mpSetCallsign(name) }
+    }
+
+    fun mpCreateRoom() {
+        runCatching { controller?.mpCreateRoom() }
+    }
+
+    fun mpJoinRoom(code: String) {
+        runCatching { controller?.mpJoinRoom(code) }
+    }
+
+    fun mpQuickMatch() {
+        runCatching { controller?.mpQuickMatch() }
+    }
+
+    fun mpLeaveRoom() {
+        runCatching { controller?.mpLeaveRoom() }
+    }
+
+    fun mpSetReady(ready: Boolean) {
+        runCatching { controller?.mpSetReady(ready) }
+    }
+
+    fun mpToggleCollisions() {
+        runCatching { controller?.mpToggleCollisions() }
+    }
+
+    fun mpStartRace() {
+        runCatching { controller?.mpStartRace() }
+    }
+
+    fun mpReturnToLobby() {
+        runCatching { controller?.mpReturnToLobby() }
     }
 
     fun setTouchInput(

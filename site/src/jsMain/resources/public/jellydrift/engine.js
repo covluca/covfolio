@@ -12,6 +12,7 @@ import {
   createCarPhysicsState,
   resetCarPhysicsState,
   stepCarPhysics,
+  resolveCarCollisions,
   speedKmh,
   driftAngleDeg,
 } from "./physics.js";
@@ -28,12 +29,22 @@ import { createVfx } from "./vfx.js";
 import { createAudio } from "./audio.js";
 import { createCameraRig } from "./camera.js";
 import { createAdProjector } from "./ads3d.js";
+import { createMultiplayerClient } from "./net.js";
 
 const PUBLISHER_ID = "ca-pub-2255472474228401";
 const DRIFT_RUSH_START = 32.0;
+const ONLINE_DRIFT_RUSH_START = 60.0;
 const CONTINUE_TIME = 20.0;
 const CHECKPOINT_BONUS = 3.2;
 const COUNTDOWN_START = 1.5;
+
+const RIVAL_DOT_COLORS = ["#38BDF8", "#FB923C", "#C084FC"];
+const MP_GRID_SLOTS = [
+  { s: 6.5, lane: -1.35 },
+  { s: 6.5, lane: 1.35 },
+  { s: 0.0, lane: -1.35 },
+  { s: 0.0, lane: 1.35 },
+];
 
 const RECORDS_STORAGE_KEY = "jellydrift_records_v1";
 
@@ -245,6 +256,36 @@ export function createJellyDriftEngine(config) {
   let muted = false;
   let lastCountdownStep = -1;
 
+  // Multiplayer runtime state
+  let mpState = {
+    open: false,
+    inRoom: false,
+    connected: false,
+    connecting: false,
+    statusText: "",
+    errorText: "",
+    roomCode: "",
+    isHost: false,
+    isPublic: false,
+    collisions: false,
+    roomStatus: "LOBBY",
+    trackId: "sunny_coast",
+    mode: "GRAND_PRIX",
+    totalLaps: 3,
+    raceSeq: 0,
+    startAtMs: 0,
+    myUid: "",
+    callsign: "Racer",
+    transport: "offline",
+    players: [],
+  };
+  const remoteRacers = new Map();
+  let isOnlineRace = false;
+  let activeOnlineRaceSeq = 0;
+  let onlineRaceStartAtMs = 0;
+  let onlineFinishedSent = false;
+  let hiddenTickTimer = null;
+
   const keyInput = { throttle: false, brake: false, left: false, right: false, drift: false, boost: false };
   const touchInput = { throttle: false, brake: false, left: false, right: false, drift: false, boost: false };
 
@@ -450,6 +491,14 @@ export function createJellyDriftEngine(config) {
         }
       }
     }
+    for (const r of remoteRacers.values()) {
+      try {
+        if (r && r.mesh && typeof r.mesh.dispose === "function") r.mesh.dispose();
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    remoteRacers.clear();
     if (scene) {
       try {
         disposeObject(scene);
@@ -665,9 +714,191 @@ export function createJellyDriftEngine(config) {
     emitSnapshot();
   }
 
+  function startOnlineRaceLocal(mp) {
+    if (!mp || !mp.inRoom) return;
+    isOnlineRace = true;
+    onlineFinishedSent = false;
+    onlineRaceStartAtMs = mp.startAtMs || mpClient.serverNow() + 2500;
+    mpClient.setOpen(false);
+
+    const trackId = getTrack(mp.trackId).id;
+    const me = Array.isArray(mp.players) ? mp.players.find((p) => p.isMe) : null;
+    const carId = getCar(me ? me.carId : state.carId).id;
+    state.trackId = trackId;
+    state.carId = carId;
+    state.mode = mp.mode === "DRIFT_RUSH" ? "DRIFT_RUSH" : "GRAND_PRIX";
+    state.totalLaps = mp.totalLaps || 3;
+
+    buildWorld(state.trackId, state.carId, false);
+    resetRaceState();
+
+    // Hide AI cars during multiplayer race
+    aiList = [];
+    if (world && Array.isArray(world.aiMeshes)) {
+      for (const m of world.aiMeshes) {
+        if (m && m.carRoot) m.carRoot.visible = false;
+      }
+    }
+
+    const track = world.track;
+    const maxLane = Math.max(0.8, (track.halfWidth || 3.9) - 1.55);
+    const mySlot = clamp(me ? me.slot : 0, 0, 3);
+    const myGrid = MP_GRID_SLOTS[mySlot];
+    resetCarPhysicsState(player, track, world.def, {
+      s: myGrid.s,
+      lane: clamp(myGrid.lane, -maxLane, maxLane),
+    });
+    player.lap = 1;
+    player.checkpointIndex = 0;
+
+    const isNight = track.id === "neon_circuit" || track.id === "akina_forest";
+    const remoteList = (mp.players || []).filter((p) => !p.isMe);
+    for (let i = 0; i < remoteList.length; i++) {
+      const rp = remoteList[i];
+      const rDef = getCar(rp.carId);
+      const rSlotIdx = clamp(rp.slot || 0, 0, 3);
+      const rGrid = MP_GRID_SLOTS[rSlotIdx];
+      const rPhys = createCarPhysicsState(rDef, track, {
+        s: rGrid.s,
+        lane: clamp(rGrid.lane, -maxLane, maxLane),
+      });
+      rPhys.id = rp.uid;
+      rPhys.name = rp.name || "Racer";
+      rPhys.carId = rDef.id;
+      rPhys.lap = 1;
+      rPhys.checkpointIndex = 0;
+      rPhys.lastInput = { steer: 0, brake: false, drift: false };
+
+      const colorHex = RIVAL_DOT_COLORS[i % RIVAL_DOT_COLORS.length];
+      const rMesh = createCarMesh(rDef, { isAI: true, nightMode: isNight });
+      if (typeof rMesh.setLabel === "function") rMesh.setLabel(rp.name || "Racer", colorHex);
+      if (typeof rMesh.setGhostMode === "function") rMesh.setGhostMode(!mp.collisions);
+      scene.add(rMesh.carRoot);
+
+      remoteRacers.set(rp.uid, {
+        uid: rp.uid,
+        name: rp.name || "Racer",
+        carId: rDef.id,
+        slot: rSlotIdx,
+        def: rDef,
+        phys: rPhys,
+        mesh: rMesh,
+        target: null,
+        colorHex,
+      });
+    }
+
+    state.rivalName = remoteList[0] ? remoteList[0].name || "Racer" : "Online";
+    state.timeRemainingSec = state.mode === "DRIFT_RUSH" ? ONLINE_DRIFT_RUSH_START : 0;
+    state.countdown = Math.max(0, (onlineRaceStartAtMs - mpClient.serverNow()) / 1000);
+    state.phase = state.countdown > 0.02 ? "COUNTDOWN" : "RACING";
+    lastCountdownStep = Math.ceil(state.countdown * 2);
+    audio.ensure();
+    audio.playCountdown(3);
+    syncPlayerVisual(0);
+    syncRemoteVisuals(0);
+    updateCamera(0);
+    updateAds();
+    emitSnapshot();
+  }
+
+  function handleMpStateChange(nextMp) {
+    mpState = nextMp;
+    if (!nextMp.inRoom) {
+      if (isOnlineRace) {
+        isOnlineRace = false;
+        activeOnlineRaceSeq = 0;
+        returnToGarage();
+      } else {
+        emitSnapshot();
+      }
+      return;
+    }
+
+    if (state.phase === "GARAGE" && nextMp.roomStatus === "LOBBY") {
+      const me = Array.isArray(nextMp.players) ? nextMp.players.find((p) => p.isMe) : null;
+      const wantedTrack = getTrack(nextMp.trackId || state.trackId).id;
+      const wantedCar = getCar(me ? me.carId : state.carId).id;
+      state.mode = nextMp.mode === "DRIFT_RUSH" ? "DRIFT_RUSH" : "GRAND_PRIX";
+      if (wantedTrack !== state.trackId || wantedCar !== state.carId) {
+        state.trackId = wantedTrack;
+        state.carId = wantedCar;
+        buildWorld(state.trackId, state.carId, true);
+        updateCamera(0);
+        updateAds();
+      }
+    }
+
+    if (nextMp.roomStatus === "COUNTDOWN" && nextMp.raceSeq > 0 && nextMp.raceSeq !== activeOnlineRaceSeq) {
+      activeOnlineRaceSeq = nextMp.raceSeq;
+      startOnlineRaceLocal(nextMp);
+      return;
+    }
+
+    if (nextMp.roomStatus === "LOBBY" && isOnlineRace && state.phase !== "GARAGE") {
+      isOnlineRace = false;
+      mpClient.setOpen(true);
+      returnToGarage();
+      return;
+    }
+
+    if (isOnlineRace && Array.isArray(nextMp.players)) {
+      const activeRemoteUids = new Set(nextMp.players.filter((p) => !p.isMe).map((p) => p.uid));
+      for (const [uid, r] of remoteRacers.entries()) {
+        if (!activeRemoteUids.has(uid)) {
+          try {
+            if (r && r.mesh && typeof r.mesh.dispose === "function") r.mesh.dispose();
+          } catch (_) {
+            /* ignore */
+          }
+          remoteRacers.delete(uid);
+        }
+      }
+    }
+
+    for (const r of remoteRacers.values()) {
+      if (r && r.mesh && typeof r.mesh.setGhostMode === "function") {
+        r.mesh.setGhostMode(!nextMp.collisions);
+      }
+    }
+    emitSnapshot();
+  }
+
+  function handleRemoteTelemetry(uid, pkt) {
+    const r = remoteRacers.get(uid);
+    if (!r || !pkt) return;
+    r.target = {
+      x: pkt.x,
+      y: pkt.y,
+      z: pkt.z,
+      vx: Number.isFinite(pkt.vx) ? pkt.vx : 0,
+      vz: Number.isFinite(pkt.vz) ? pkt.vz : 0,
+      yaw: Number.isFinite(pkt.yaw) ? pkt.yaw : r.phys.yaw,
+      steer: Number.isFinite(pkt.steer) ? pkt.steer : 0,
+      slip: Number.isFinite(pkt.slip) ? pkt.slip : 0,
+      speed: Number.isFinite(pkt.speed) ? pkt.speed : 0,
+      drifting: !!pkt.drifting,
+      braking: !!pkt.braking,
+      lap: Number.isFinite(pkt.lap) ? pkt.lap : 1,
+      cp: Number.isFinite(pkt.cp) ? pkt.cp : 0,
+      score: Number.isFinite(pkt.score) ? pkt.score : 0,
+      t: Number.isFinite(pkt.t) ? pkt.t : mpClient.serverNow(),
+    };
+  }
+
+  const mpClient = createMultiplayerClient({
+    onStateChange: handleMpStateChange,
+    onRemoteTelemetry: handleRemoteTelemetry,
+  });
+  mpState = mpClient.getState();
+
   function selectTrack(trackId) {
     if (state.phase !== "GARAGE" || typeof trackId !== "string") return;
-    state.trackId = getTrack(trackId).id;
+    const valid = getTrack(trackId).id;
+    state.trackId = valid;
+    if (mpState.inRoom && mpState.isHost) {
+      mpClient.updateRoomSettings({ trackId: valid });
+    }
     buildWorld(state.trackId, state.carId, true);
     updateCamera(0);
     updateAds();
@@ -676,7 +907,11 @@ export function createJellyDriftEngine(config) {
 
   function selectCar(carId) {
     if (state.phase !== "GARAGE" || typeof carId !== "string") return;
-    state.carId = getCar(carId).id;
+    const valid = getCar(carId).id;
+    state.carId = valid;
+    if (mpState.inRoom) {
+      mpClient.updateLocalCar(valid);
+    }
     buildWorld(state.trackId, state.carId, true);
     updateCamera(0);
     updateAds();
@@ -685,8 +920,12 @@ export function createJellyDriftEngine(config) {
 
   function selectMode(mode) {
     if (state.phase !== "GARAGE") return;
-    state.mode = mode === "GRAND_PRIX" ? "GRAND_PRIX" : "DRIFT_RUSH";
+    const nextMode = mode === "GRAND_PRIX" ? "GRAND_PRIX" : "DRIFT_RUSH";
+    state.mode = nextMode;
     state.timeRemainingSec = state.mode === "DRIFT_RUSH" ? DRIFT_RUSH_START : 0;
+    if (mpState.inRoom && mpState.isHost) {
+      mpClient.updateRoomSettings({ mode: nextMode });
+    }
     emitSnapshot();
   }
 
@@ -859,7 +1098,17 @@ export function createJellyDriftEngine(config) {
     const prevDriftPts = player.driftScore || 0;
 
     stepCarPhysics(player, input, dt, track);
-    stepAllAI(aiList, dt, track, player, state.difficulty);
+    if (isOnlineRace) {
+      if (mpState.collisions && remoteRacers.size > 0) {
+        const racersArr = [player];
+        for (const r of remoteRacers.values()) {
+          if (r && r.phys) racersArr.push(r.phys);
+        }
+        resolveCarCollisions(racersArr, { track, restitution: 0.32 });
+      }
+    } else {
+      stepAllAI(aiList, dt, track, player, state.difficulty);
+    }
 
     state.lapTimeSec += dt;
     const gb = computeGearbox(player.speed || 0);
@@ -933,28 +1182,93 @@ export function createJellyDriftEngine(config) {
           player.speed = 0;
           player.vel.x = 0;
           player.vel.z = 0;
+          if (isOnlineRace && !onlineFinishedSent) {
+            onlineFinishedSent = true;
+            mpClient.reportRaceFinish({
+              driftScore: state.driftScore,
+              bestLapSec: state.bestLapSec,
+            });
+          }
         } else {
           state.lap = player.lap;
         }
       }
     }
 
-    const standings = computeRaceStandings(player, aiList, track);
-    state.position = clamp(standings.position, 1, 1 + AI_COUNT);
-    state.rivalGapMeters = aiList[0]
-      ? Math.round(computeRacerProgress(player, track) - computeRacerProgress(aiList[0], track))
-      : 0;
+    const activeRivals = isOnlineRace
+      ? Array.from(remoteRacers.values()).map((r) => r.phys)
+      : aiList;
+
+    if (isOnlineRace && state.mode === "DRIFT_RUSH") {
+      const scoreBoard = [
+        { isPlayer: true, score: state.driftScore },
+        ...activeRivals.map((r) => ({ isPlayer: false, score: r.driftScore || 0 })),
+      ].sort((a, b) => b.score - a.score);
+      const idx = scoreBoard.findIndex((x) => x.isPlayer);
+      state.position = clamp(idx >= 0 ? idx + 1 : 1, 1, 1 + activeRivals.length);
+    } else {
+      const standings = computeRaceStandings(player, activeRivals, track);
+      state.position = clamp(standings.position, 1, 1 + activeRivals.length);
+    }
+
+    if (activeRivals.length > 0) {
+      const pProg = computeRacerProgress(player, track);
+      let bestRival = activeRivals[0];
+      let bestAbs = Infinity;
+      let bestGap = 0;
+      for (const rv of activeRivals) {
+        const g = Math.round(pProg - computeRacerProgress(rv, track));
+        if (Math.abs(g) < bestAbs) {
+          bestAbs = Math.abs(g);
+          bestGap = g;
+          bestRival = rv;
+        }
+      }
+      state.rivalGapMeters = bestGap;
+      if (isOnlineRace && bestRival && bestRival.name) {
+        state.rivalName = bestRival.name;
+      }
+    } else {
+      state.rivalGapMeters = 0;
+    }
 
     if (state.mode === "DRIFT_RUSH" && state.phase === "RACING") {
-      state.timeRemainingSec = Math.max(0, state.timeRemainingSec - dt);
-      if (state.timeRemainingSec <= 0) {
-        state.timeRemainingSec = 0;
-        state.phase = "CONTINUE_OFFER";
-        state.continueOpen = true;
-        state.continueStatus = "idle";
-        player.speed = 0;
-        player.vel.x = 0;
-        player.vel.z = 0;
+      if (isOnlineRace) {
+        const elapsedSec = Math.max(0, (mpClient.serverNow() - onlineRaceStartAtMs) / 1000);
+        state.timeRemainingSec = Math.max(0, ONLINE_DRIFT_RUSH_START - elapsedSec);
+        if (state.timeRemainingSec <= 0) {
+          state.timeRemainingSec = 0;
+          if (driftComboRaw > 0) {
+            bankedDriftScore += Math.round(driftComboRaw * state.driftMultiplier);
+            driftComboRaw = 0;
+            state.driftCombo = 0;
+            state.driftMultiplier = 1;
+            state.driftScore = Math.round(bankedDriftScore);
+          }
+          state.phase = "FINISHED";
+          state.continueOpen = false;
+          player.speed = 0;
+          player.vel.x = 0;
+          player.vel.z = 0;
+          if (!onlineFinishedSent) {
+            onlineFinishedSent = true;
+            mpClient.reportRaceFinish({
+              driftScore: state.driftScore,
+              bestLapSec: state.bestLapSec,
+            });
+          }
+        }
+      } else {
+        state.timeRemainingSec = Math.max(0, state.timeRemainingSec - dt);
+        if (state.timeRemainingSec <= 0) {
+          state.timeRemainingSec = 0;
+          state.phase = "CONTINUE_OFFER";
+          state.continueOpen = true;
+          state.continueStatus = "idle";
+          player.speed = 0;
+          player.vel.x = 0;
+          player.vel.z = 0;
+        }
       }
     }
   }
@@ -1001,6 +1315,7 @@ export function createJellyDriftEngine(config) {
   function syncAIVisual(dt) {
     if (!world || !Array.isArray(world.aiMeshes)) return;
     const showAI =
+      !isOnlineRace &&
       !world.forGarage &&
       (state.phase === "RACING" ||
         state.phase === "COUNTDOWN" ||
@@ -1036,6 +1351,93 @@ export function createJellyDriftEngine(config) {
         rpmNorm: aiGb.rpmNorm,
       });
       aiMesh.carRoot.updateMatrixWorld(true);
+    }
+  }
+
+  function syncRemoteVisuals(dt) {
+    if (!world || !isOnlineRace || remoteRacers.size === 0) return;
+    const track = world.track;
+    const showRemote =
+      state.phase === "RACING" ||
+      state.phase === "COUNTDOWN" ||
+      state.phase === "PAUSED" ||
+      state.phase === "FINISHED";
+
+    for (const r of remoteRacers.values()) {
+      const rp = r.phys;
+      const rm = r.mesh;
+      if (!rp || !rm) continue;
+      rm.carRoot.visible = showRemote;
+      if (!showRemote) continue;
+
+      if (r.target && dt > 0 && state.phase !== "COUNTDOWN") {
+        const lead = clamp((mpClient.serverNow() - r.target.t) / 1000, 0, 0.14);
+        const tx = r.target.x + r.target.vx * lead;
+        const tz = r.target.z + r.target.vz * lead;
+        const dist = Math.hypot(tx - rp.pos.x, tz - rp.pos.z);
+        if (dist > 16) {
+          rp.pos.x = tx;
+          rp.pos.z = tz;
+        } else {
+          const alpha = 1 - Math.exp(-dt * 14);
+          rp.pos.x += (tx - rp.pos.x) * alpha;
+          rp.pos.z += (tz - rp.pos.z) * alpha;
+        }
+
+        let dyaw = r.target.yaw - rp.yaw;
+        while (dyaw > Math.PI) dyaw -= Math.PI * 2;
+        while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+        rp.yaw += dyaw * (1 - Math.exp(-dt * 16));
+
+        rp.vel.x = r.target.vx;
+        rp.vel.z = r.target.vz;
+        rp.speed = r.target.speed;
+        rp.slip = r.target.slip;
+        rp.drifting = r.target.drifting;
+        rp.lap = r.target.lap;
+        rp.checkpointIndex = r.target.cp;
+        rp.driftScore = r.target.score;
+        rp.lastInput = {
+          steer: r.target.steer,
+          brake: r.target.braking,
+          drift: r.target.drifting,
+        };
+
+        if (track && typeof track.projectToTrack === "function") {
+          const proj = track.projectToTrack(rp.pos.x, rp.pos.z, rp.trackSampleIdx, rp.pos.y);
+          rp.trackSampleIdx = proj.sampleIdx;
+          rp.trackS = proj.s;
+          rp.lateralOffset = proj.lateralOffset;
+          const bankH = (proj.binormal && Number.isFinite(proj.binormal.y) ? proj.binormal.y : 0) * proj.lateralOffset;
+          rp.pos.y = proj.point.y - bankH;
+          const cFx = Math.sin(rp.yaw);
+          const cFz = Math.cos(rp.yaw);
+          const cRx = -Math.cos(rp.yaw);
+          const cRz = Math.sin(rp.yaw);
+          rp.surfacePitchDeg =
+            (Math.asin(clamp(cFx * proj.normal.x + cFz * proj.normal.z, -0.65, 0.65)) * 180) / Math.PI;
+          rp.surfaceRollDeg =
+            (Math.asin(clamp(cRx * proj.normal.x + cRz * proj.normal.z, -0.5, 0.5)) * 180) / Math.PI;
+          rp.surfaceNormal = { x: proj.normal.x, y: proj.normal.y, z: proj.normal.z };
+        }
+      }
+
+      const py = Number.isFinite(rp.pos.y) ? rp.pos.y : 0;
+      rm.carRoot.position.set(rp.pos.x, py, rp.pos.z);
+      const surfPitchRad = ((rp.surfacePitchDeg || 0) * Math.PI) / 180;
+      const surfRollRad = ((rp.surfaceRollDeg || 0) * Math.PI) / 180;
+      rm.carRoot.rotation.set(surfPitchRad, rp.yaw, surfRollRad, "YXZ");
+
+      const wheelSpin = dt > 0 ? ((rp.speed || 0) * dt) / ((r.def && r.def.wheelRadius) || 0.36) : 0;
+      const rGb = computeGearbox(rp.speed || 0);
+      rm.updateVisuals({
+        steerInput: (rp.lastInput && rp.lastInput.steer) || 0,
+        wheelSpin,
+        cameraMode: "CHASE",
+        braking: !!(rp.lastInput && (rp.lastInput.brake || rp.lastInput.drift)),
+        rpmNorm: rGb.rpmNorm,
+      });
+      rm.carRoot.updateMatrixWorld(true);
     }
   }
 
@@ -1167,6 +1569,57 @@ export function createJellyDriftEngine(config) {
 
     const pMap = player && minimapBounds ? worldToMinimap(player.pos, minimapBounds) : { x: 50, y: 50 };
     const rMap = aiList[0] && minimapBounds ? worldToMinimap(aiList[0].pos, minimapBounds) : { x: 50, y: 50 };
+    const rivalsMap = [];
+    if (isOnlineRace && minimapBounds) {
+      for (const r of remoteRacers.values()) {
+        if (!r || !r.phys) continue;
+        const pt = worldToMinimap(r.phys.pos, minimapBounds);
+        rivalsMap.push({ x: pt.x, y: pt.y, color: r.colorHex || "#38BDF8" });
+      }
+    } else if (minimapBounds) {
+      for (let i = 0; i < aiList.length; i++) {
+        const pt = worldToMinimap(aiList[i].pos, minimapBounds);
+        rivalsMap.push({ x: pt.x, y: pt.y, color: RIVAL_DOT_COLORS[i % RIVAL_DOT_COLORS.length] });
+      }
+    }
+
+    let mpSnapshot = mpState;
+    if (mpState.inRoom && Array.isArray(mpState.players)) {
+      const rankList = [];
+      const curTrack = world ? world.track : track;
+      for (const p of mpState.players) {
+        let prog = 0;
+        let score = p.driftScore || 0;
+        if (p.isMe && player) {
+          prog = computeRacerProgress(player, curTrack);
+          score = Math.round(state.driftScore);
+        } else {
+          const rr = remoteRacers.get(p.uid);
+          if (rr && rr.phys) {
+            prog = computeRacerProgress(rr.phys, curTrack);
+            score = Math.round(rr.phys.driftScore || p.driftScore || 0);
+          }
+        }
+        rankList.push({ p, prog, score });
+      }
+      rankList.sort((a, b) => {
+        if (state.mode === "DRIFT_RUSH") return b.score - a.score;
+        const fa = a.p.finishedAtMs || 0;
+        const fb = b.p.finishedAtMs || 0;
+        if (fa > 0 && fb > 0) return fa - fb;
+        if (fa > 0) return -1;
+        if (fb > 0) return 1;
+        return b.prog - a.prog;
+      });
+      const enriched = rankList.map((item, idx) => ({
+        ...item.p,
+        driftScore: item.score,
+        position: idx + 1,
+      }));
+      mpSnapshot = { ...mpState, players: enriched };
+    }
+
+    const totalRacers = isOnlineRace ? Math.max(1, 1 + remoteRacers.size) : 1 + AI_COUNT;
 
     return {
       ready: state.ready,
@@ -1193,6 +1646,7 @@ export function createJellyDriftEngine(config) {
       playerMapY: pMap.y,
       rivalMapX: rMap.x,
       rivalMapY: rMap.y,
+      rivalsMap,
       boostCharge: player ? clamp(player.boostCharge, 0, 1) : 0,
       boostTier: player ? boostTierFor(player.boostCharge) : 0,
       lap: state.lap,
@@ -1203,8 +1657,10 @@ export function createJellyDriftEngine(config) {
       timeRemainingSec: state.timeRemainingSec,
       continuesUsed: state.continuesUsed,
       position: state.position,
-      aiCount: AI_COUNT,
+      aiCount: isOnlineRace ? remoteRacers.size : AI_COUNT,
+      totalRacers,
       countdown: state.countdown,
+      mp: mpSnapshot,
       playerWorldPos: { x: px, y: py, z: pz, yawDeg },
       jellySpring: {
         pitchDeg: spring.pitchDeg || 0,
@@ -1294,7 +1750,11 @@ export function createJellyDriftEngine(config) {
 
       const phaseBeforeStep = state.phase;
       if (state.phase === "COUNTDOWN") {
-        state.countdown -= dt;
+        if (isOnlineRace && onlineRaceStartAtMs > 0) {
+          state.countdown = Math.max(0, (onlineRaceStartAtMs - mpClient.serverNow()) / 1000);
+        } else {
+          state.countdown -= dt;
+        }
         const step = Math.ceil(state.countdown * 2);
         if (step !== lastCountdownStep && step > 0) {
           lastCountdownStep = step;
@@ -1319,18 +1779,45 @@ export function createJellyDriftEngine(config) {
         accumulator = 0;
       }
 
+      if (isOnlineRace && player && (state.phase === "COUNTDOWN" || state.phase === "RACING" || state.phase === "FINISHED")) {
+        const inp = effectiveInput();
+        mpClient.sendTelemetry({
+          x: Math.round(player.pos.x * 100) / 100,
+          y: Math.round((player.pos.y || 0) * 100) / 100,
+          z: Math.round(player.pos.z * 100) / 100,
+          vx: Math.round((player.vel.x || 0) * 100) / 100,
+          vz: Math.round((player.vel.z || 0) * 100) / 100,
+          yaw: Math.round(player.yaw * 1000) / 1000,
+          steer: Math.round(inp.steer * 100) / 100,
+          slip: Math.round((player.slip || 0) * 1000) / 1000,
+          speed: Math.round((player.speed || 0) * 100) / 100,
+          drifting: !!player.drifting,
+          braking: !!(inp.brake || inp.drift),
+          lap: player.lap || 1,
+          cp: player.checkpointIndex || 0,
+          score: Math.round(state.driftScore || 0),
+        });
+      }
+
       syncPlayerVisual(dt);
       syncAIVisual(dt);
+      syncRemoteVisuals(dt);
       updateCamera(dt);
 
       if (player && world && vfx) {
         try {
+          const activeVfxRivals =
+            state.phase === "RACING"
+              ? isOnlineRace
+                ? Array.from(remoteRacers.values()).map((r) => r.phys)
+                : aiList
+              : [];
           vfx.update(
             dt,
             player,
             state.phase === "RACING" && player.drifting,
             false,
-            { rivals: state.phase === "RACING" ? aiList : [] }
+            { rivals: activeVfxRivals }
           );
         } catch (_) {
           /* visual-only */
@@ -1413,7 +1900,7 @@ export function createJellyDriftEngine(config) {
     if (document.hidden) {
       clearInputs();
       clearTouchInputs();
-      if (state.phase === "RACING" || state.phase === "COUNTDOWN") {
+      if (!isOnlineRace && (state.phase === "RACING" || state.phase === "COUNTDOWN")) {
         prevPhase = state.phase;
         state.phase = "PAUSED";
         updateAds();
@@ -1425,7 +1912,7 @@ export function createJellyDriftEngine(config) {
   function onWindowBlur() {
     clearInputs();
     clearTouchInputs();
-    if (state.phase === "RACING" || state.phase === "COUNTDOWN") {
+    if (!isOnlineRace && (state.phase === "RACING" || state.phase === "COUNTDOWN")) {
       prevPhase = state.phase;
       state.phase = "PAUSED";
       updateAds();
@@ -1479,9 +1966,65 @@ export function createJellyDriftEngine(config) {
   emitSnapshot();
   rafId = requestAnimationFrame(frame);
 
+  // Keep online countdown/telemetry alive when browser tab is momentarily unfocused
+  hiddenTickTimer = setInterval(() => {
+    if (disposed || !isOnlineRace) return;
+    if (typeof document !== "undefined" && document.hidden) {
+      if (state.phase === "COUNTDOWN" && onlineRaceStartAtMs > 0) {
+        state.countdown = Math.max(0, (onlineRaceStartAtMs - mpClient.serverNow()) / 1000);
+        if (state.countdown <= 0) {
+          state.countdown = 0;
+          state.phase = "RACING";
+        }
+      }
+      if (player && (state.phase === "COUNTDOWN" || state.phase === "RACING")) {
+        mpClient.sendTelemetry({
+          x: Math.round(player.pos.x * 100) / 100,
+          y: Math.round((player.pos.y || 0) * 100) / 100,
+          z: Math.round(player.pos.z * 100) / 100,
+          vx: Math.round((player.vel.x || 0) * 100) / 100,
+          vz: Math.round((player.vel.z || 0) * 100) / 100,
+          yaw: Math.round(player.yaw * 1000) / 1000,
+          steer: 0,
+          slip: Math.round((player.slip || 0) * 1000) / 1000,
+          speed: Math.round((player.speed || 0) * 100) / 100,
+          drifting: false,
+          braking: false,
+          lap: player.lap || 1,
+          cp: player.checkpointIndex || 0,
+          score: Math.round(state.driftScore || 0),
+        });
+      }
+    }
+  }, 50);
+
+  // Check ?room=XXXX query param on boot (ignore during Kobweb static export)
+  try {
+    if (typeof window !== "undefined" && window.location && window.location.search) {
+      const params = new URLSearchParams(window.location.search);
+      const isExp = params.get("_kobwebIsExporting") === "true";
+      const roomParam = params.get("room");
+      if (!isExp && roomParam && roomParam.trim().length >= 4) {
+        mpClient.setOpen(true);
+        mpClient.joinRoom(roomParam, { carId: state.carId });
+      }
+    }
+  } catch (_) {
+    /* ignore query parsing */
+  }
+
   function dispose() {
     if (disposed) return;
     disposed = true;
+    if (hiddenTickTimer) {
+      clearInterval(hiddenTickTimer);
+      hiddenTickTimer = null;
+    }
+    try {
+      mpClient.dispose();
+    } catch (_) {
+      /* ignore */
+    }
     if (rafId) {
       cancelAnimationFrame(rafId);
       rafId = 0;
@@ -1541,6 +2084,47 @@ export function createJellyDriftEngine(config) {
     setMuted,
     setTouchInput,
     confirmUiPhase,
+    mpOpenLobby: () => mpClient.setOpen(true),
+    mpCloseLobby: () => mpClient.setOpen(false),
+    mpSetCallsign: (name) => mpClient.setCallsign(name),
+    mpCreateRoom: () =>
+      mpClient.createRoom({
+        trackId: state.trackId,
+        mode: state.mode,
+        carId: state.carId,
+        collisions: false,
+        isPublic: false,
+      }),
+    mpJoinRoom: (code) => mpClient.joinRoom(code, { carId: state.carId }),
+    mpQuickMatch: () =>
+      mpClient.quickMatch({
+        trackId: state.trackId,
+        mode: state.mode,
+        carId: state.carId,
+        collisions: false,
+      }),
+    mpLeaveRoom: () => {
+      isOnlineRace = false;
+      activeOnlineRaceSeq = 0;
+      mpClient.leaveRoom();
+      if (state.phase !== "GARAGE") returnToGarage();
+    },
+    mpSetReady: (ready) => mpClient.setReady(ready),
+    mpToggleCollisions: () => {
+      if (mpState.inRoom && mpState.isHost) {
+        mpClient.updateRoomSettings({ collisions: !mpState.collisions });
+      }
+    },
+    mpStartRace: () => mpClient.startOnlineRace(),
+    mpReturnToLobby: () => {
+      if (mpState.inRoom && mpState.isHost) {
+        mpClient.returnRoomToLobby();
+      } else {
+        isOnlineRace = false;
+        mpClient.setOpen(true);
+        returnToGarage();
+      }
+    },
     getSnapshot: buildSnapshot,
     dispose,
   };

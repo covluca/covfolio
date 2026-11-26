@@ -1,0 +1,48 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "jellydrift": {
+      "matchmaking": {
+        ".read": "auth != null",
+        ".indexOn": ["status", "updatedAt"],
+        "$roomCode": {
+          ".write": "auth != null && $roomCode.length >= 4 && $roomCode.length <= 8 && ((!data.exists() && newData.child('hostUid').val() === auth.uid) || (data.exists() && data.child('hostUid').val() === auth.uid))",
+          ".validate": "!newData.exists() || (newData.hasChildren(['roomCode', 'hostUid', 'status', 'trackId', 'mode', 'playerCount', 'updatedAt']) && newData.child('roomCode').val() === $roomCode && newData.child('hostUid').isString() && newData.child('status').isString() && (newData.child('status').val() === 'OPEN' || newData.child('status').val() === 'RACING') && newData.child('trackId').isString() && newData.child('mode').isString() && newData.child('playerCount').isNumber() && newData.child('playerCount').val() >= 1 && newData.child('playerCount').val() <= 4)"
+        }
+      },
+      "rooms": {
+        ".read": false,
+        "$roomCode": {
+          ".read": false,
+          "meta": {
+            ".read": "auth != null && $roomCode.length >= 4 && $roomCode.length <= 8",
+            ".write": "auth != null && ((!data.exists() && newData.child('hostUid').val() === auth.uid) || data.child('hostUid').val() === auth.uid || (!root.child('jellydrift/rooms/' + $roomCode + '/players/' + data.child('hostUid').val()).exists() && root.child('jellydrift/rooms/' + $roomCode + '/players/' + auth.uid).exists() && newData.child('hostUid').val() === auth.uid))",
+            ".validate": "!newData.exists() || (newData.hasChildren(['hostUid', 'trackId', 'mode', 'status', 'collisions', 'totalLaps']) && newData.child('hostUid').isString() && newData.child('trackId').isString() && newData.child('mode').isString() && (newData.child('status').val() === 'LOBBY' || newData.child('status').val() === 'COUNTDOWN' || newData.child('status').val() === 'RACING' || newData.child('status').val() === 'FINISHED') && newData.child('collisions').isBoolean() && newData.child('totalLaps').isNumber() && newData.child('totalLaps').val() >= 1 && newData.child('totalLaps').val() <= 5)"
+          },
+          "players": {
+            ".read": "auth != null && $roomCode.length >= 4 && $roomCode.length <= 8",
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid",
+              ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'name', 'carId', 'slot']) && newData.child('uid').val() === $uid && newData.child('name').isString() && newData.child('name').val().length >= 1 && newData.child('name').val().length <= 20 && newData.child('carId').isString() && newData.child('slot').isNumber() && newData.child('slot').val() >= 0 && newData.child('slot').val() <= 3)"
+            }
+          },
+          "telemetry": {
+            ".read": "auth != null && $roomCode.length >= 4 && $roomCode.length <= 8",
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid"
+            }
+          },
+          "signals": {
+            "$targetUid": {
+              ".read": "auth != null && auth.uid === $targetUid",
+              "$fromUid": {
+                ".write": "auth != null && (auth.uid === $fromUid || auth.uid === $targetUid)"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

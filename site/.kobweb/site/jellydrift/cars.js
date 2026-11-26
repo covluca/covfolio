@@ -1162,7 +1162,99 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
     }
   }
 
+  let labelSprite = null;
+  let labelTex = null;
+  let labelMat = null;
+  let lastLabelText = "";
+
+  function setLabel(name, accentColor = "#38BDF8") {
+    const clean = typeof name === "string" ? name.trim().slice(0, 18) : "";
+    if (!clean) {
+      if (labelSprite) labelSprite.visible = false;
+      lastLabelText = "";
+      return;
+    }
+    if (clean === lastLabelText && labelSprite) {
+      labelSprite.visible = true;
+      return;
+    }
+    if (typeof document === "undefined" || typeof document.createElement !== "function") return;
+    lastLabelText = clean;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, 256, 64);
+    ctx.fillStyle = "rgba(12, 17, 25, 0.84)";
+    ctx.strokeStyle = accentColor || "#38BDF8";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    if (typeof ctx.roundRect === "function") {
+      ctx.roundRect(8, 8, 240, 48, 14);
+    } else {
+      ctx.rect(8, 8, 240, 48);
+    }
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#F8FAFC";
+    ctx.font = "bold 24px 'Space Grotesk', system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(clean, 128, 33);
+
+    if (labelTex) {
+      try {
+        labelTex.dispose();
+      } catch (_) {}
+    }
+    labelTex = new THREE.CanvasTexture(canvas);
+    labelTex.needsUpdate = true;
+
+    if (!labelMat) {
+      labelMat = trackMat(
+        new THREE.SpriteMaterial({
+          map: labelTex,
+          transparent: true,
+          depthTest: false,
+          depthWrite: false,
+        })
+      );
+      labelSprite = new THREE.Sprite(labelMat);
+      labelSprite.name = "mp-nametag";
+      labelSprite.position.set(0, roofTopY + 0.44, 0);
+      labelSprite.scale.set(1.9, 0.48, 1);
+      labelSprite.renderOrder = 10;
+      carRoot.add(labelSprite);
+    } else {
+      labelMat.map = labelTex;
+      labelMat.needsUpdate = true;
+    }
+    labelSprite.visible = true;
+  }
+
+  let ghostActive = false;
+  function setGhostMode(enabled) {
+    const next = !!enabled;
+    if (next === ghostActive) return;
+    ghostActive = next;
+    const opacity = next ? 0.56 : 1.0;
+    for (const m of [bodyMat, accentMat, trimMat]) {
+      m.transparent = next;
+      m.opacity = opacity;
+      m.needsUpdate = true;
+    }
+  }
+
   function dispose() {
+    if (labelTex) {
+      try {
+        labelTex.dispose();
+      } catch (_) {}
+      labelTex = null;
+    }
     if (carRoot.parent) {
       carRoot.parent.remove(carRoot);
     }
@@ -1203,6 +1295,8 @@ export function createCarMesh(defOrThree, optionsOrDef = {}, maybeOpts = {}) {
     driverLookTarget,
     hoodAnchor,
     updateVisuals,
+    setLabel,
+    setGhostMode,
     dispose
   };
 }

@@ -363,9 +363,15 @@ fun DriftPage() {
                 )
 
                 when (snapshot.phase) {
-                    GamePhase.GARAGE -> GarageMenu(snapshot = snapshot, bridge = bridge)
+                    GamePhase.GARAGE -> {
+                        if (snapshot.mp.open) {
+                            MultiplayerLobbyModal(snapshot = snapshot, bridge = bridge)
+                        } else {
+                            GarageMenu(snapshot = snapshot, bridge = bridge)
+                        }
+                    }
                     GamePhase.COUNTDOWN -> CountdownOverlay(snapshot = snapshot)
-                    GamePhase.PAUSED -> PauseMenu(bridge = bridge)
+                    GamePhase.PAUSED -> PauseMenu(snapshot = snapshot, bridge = bridge)
                     GamePhase.CONTINUE_OFFER -> ContinueOfferMenu(snapshot = snapshot, bridge = bridge)
                     GamePhase.FINISHED -> PodiumMenu(snapshot = snapshot, bridge = bridge)
                     else -> {}
@@ -474,8 +480,10 @@ fun DriftPage() {
 
         val visibilityListener = EventListener {
             val hidden = (document.asDynamic().hidden as? Boolean) == true
-            val curPhase = bridge.getSnapshot()?.phase
-            if (hidden && (curPhase == GamePhase.RACING || curPhase == GamePhase.COUNTDOWN)) {
+            val curSnap = bridge.getSnapshot()
+            val curPhase = curSnap?.phase
+            val inOnlineRoom = curSnap?.mp?.inRoom == true
+            if (hidden && !inOnlineRoom && (curPhase == GamePhase.RACING || curPhase == GamePhase.COUNTDOWN)) {
                 bridge.pause()
             }
         }
